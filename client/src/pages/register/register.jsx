@@ -5,10 +5,13 @@ import { MdEmail } from "react-icons/md";
 import { FaLock } from "react-icons/fa6";
 
 const Register = () => {
+  const handleLogin = () =>{
+    window.location.href='/login'
+  }
   return (
-    <div className="container">
-      <div className="login-content">
-        <div className="login-header">REGISTER</div>
+    <div className="container-register">
+      <div className="register-content">
+        <div className="register-header">REGISTER</div>
         <div className="input">
           <IoPerson className="icon" size={25} />
           <input
@@ -16,8 +19,7 @@ const Register = () => {
             placeholder="Name"
             type="text"
             name="name"
-            //   value={formdata.name}
-            //   onChange={handleChange}
+           
           />
         </div>
         <div className="input">
@@ -27,8 +29,7 @@ const Register = () => {
             placeholder="Email"
             type="text"
             name="email"
-            //   value={formdata.name}
-            //   onChange={handleChange}
+           
           />
         </div>
         <div className="input">
@@ -38,13 +39,26 @@ const Register = () => {
             placeholder="Password"
             type="Password"
             name="Password"
-            //   value={formdata.email}
-            //   onChange={handleChange}
+           
+          />
+        </div>
+        <div className="input">
+          <FaLock className="icon" size={25} />
+          <input
+            className="inputfield"
+            placeholder="Confirm Password"
+            type="Password"
+            name="Password"
+            
           />
         </div>
         <div type="submit" className="button">
           Register
         </div>
+        <div className="OR">OR</div>
+        <button className="log-in-to-button" onClick={handleLogin}>
+          Log in to Account
+        </button>
       </div>
     </div>
   );

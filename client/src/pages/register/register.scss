@@ -1,29 +1,25 @@
-body {
-  background-image: url("../../assets/background.jpg");
-  overflow: hidden;
-  background-size: cover;
-  width: 100vw;
-  height: 100vh;
-}
-
-.container {
+.container-register {
   position: absolute;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  .login-header {
+  background-image: url("../../assets/background.jpg");
+  overflow: hidden;
+  background-size: cover;
+
+  .register-header {
     font-size: 36px;
     font-weight: bolder;
     color: rgb(255, 255, 255);
   }
-  .login-content {
+  .register-content {
     display: flex;
     flex-direction: column;
     justify-content: center;
     width: 40%;
-    height: 60%;
+    height: 80%;
     margin: auto;
     align-items: center;
     background: transparent;
@@ -38,7 +34,7 @@ body {
       align-items: center;
       gap: 15px;
       width: 30rem;
-      height: 5rem;
+      height: 4.7rem;
       background: #f3f5f3;
       border-radius: 10px;
       .icon {
@@ -59,10 +55,24 @@ body {
       align-items: center;
       border-radius: 30px;
       width: 15rem;
-      height: 4rem;
+      height: 3.7rem;
       font-size: larger;
       font-weight: bolder;
       background: rgb(90, 189, 247);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+    }
+    .log-in-to-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 30px;
+      width: 15rem;
+      height: 3.7rem;
+      border: none;
+      font-size: larger;
+      font-weight: bolder;
+      background: rgb(172, 151, 249);
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
       cursor: pointer;
     }

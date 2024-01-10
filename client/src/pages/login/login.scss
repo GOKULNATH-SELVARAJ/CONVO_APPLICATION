@@ -1,18 +1,22 @@
-body {
-  background-image: url("../../assets/background.jpg");
-  overflow: hidden;
-  background-size: cover;
-  width: 100vw;
-  height: 100vh;
-}
+// body {
+//   background-image: url("../../assets/background.jpg");
+//   overflow: hidden;
+//   background-size: cover;
+//   width: 100vw;
+//   height: 100vh;
+// }
 
-.container {
+.container-login {
   position: absolute;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  background-image: url("../../assets/background.jpg");
+  overflow: hidden;
+  background-size: cover;
+
   .login-header {
     font-size: 36px;
     font-weight: bolder;
@@ -23,11 +27,11 @@ body {
     flex-direction: column;
     justify-content: center;
     width: 40%;
-    height: 50%;
+    height: 60%;
     margin: auto;
     align-items: center;
     background: transparent;
-    backdrop-filter: blur(3px);
+    // backdrop-filter: blur(3px);
     border: 3px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
     border-radius: 10px;
@@ -38,7 +42,7 @@ body {
       align-items: center;
       gap: 15px;
       width: 30rem;
-      height: 5rem;
+      height: 4.7rem;
       background: #f3f5f3;
       border-radius: 10px;
       .icon {
@@ -53,15 +57,30 @@ body {
         font-size: 19px;
       }
     }
-    .button {
+    .login-button {
       display: flex;
       justify-content: center;
       align-items: center;
       border-radius: 30px;
-      width: 15rem;
-      height: 4rem;
+      width: 30rem;
+      height: 3.7rem;
+      border: none;
       font-size: larger;
       font-weight: bolder;
+      background: rgb(172, 151, 249);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+    }
+    .register-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 30px;
+      width: 30rem;
+      height: 3.7rem;
+      font-size: larger;
+      font-weight: bolder;
+      border: none;
       background: rgb(90, 189, 247);
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
       cursor: pointer;

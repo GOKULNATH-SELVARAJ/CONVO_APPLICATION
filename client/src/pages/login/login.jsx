@@ -1,22 +1,44 @@
-import React from "react";
+import React, { useContext, useRef } from "react";
 import "./login.scss";
 import { MdEmail } from "react-icons/md";
 import { FaLock } from "react-icons/fa6";
+import { LoginCall } from "../../apiCall";
+import { AuthContext } from "../../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 const Login = () => {
+  const email = useRef();
+  const password = useRef();
+  const { user, isFetching, error, dispatch } = useContext(AuthContext);
+  const navigation = useNavigate();
+
+  const handleRegister = () => {
+    navigation("/register");
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    LoginCall(
+      { email: email.current.value, password: password.current.value },
+      dispatch
+    );
+    navigation("/");
+  };
+
+  console.log(user);
   return (
-    <div className="container">
-      <div className="login-content">
+    <div className="container-login">
+      <form className="login-content" onSubmit={handleSubmit}>
         <div className="login-header">LOGIN</div>
         <div className="input">
           <MdEmail className="icon" size={25} />
           <input
             className="inputfield"
             placeholder="Email"
-            type="text"
+            type="email"
             name="email"
-            //   value={formdata.name}
-            //   onChange={handleChange}
+            ref={email}
+            required
           />
         </div>
         <div className="input">
@@ -25,15 +47,19 @@ const Login = () => {
             className="inputfield"
             placeholder="Password"
             type="Password"
-            name="Password"
-            //   value={formdata.email}
-            //   onChange={handleChange}
+            ref={password}
+            required
+            minLength={8}
           />
         </div>
-        <div type="submit" className="button">
-          Login
-        </div>
-      </div>
+        <button type="submit" className="login-button">
+          LOGIN
+        </button>
+        <div className="OR">OR</div>
+        <button className="register-button" onClick={handleRegister}>
+          REGISTER
+        </button>
+      </form>
     </div>
   );
 };

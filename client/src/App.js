@@ -1,11 +1,13 @@
 import "./App.css";
 import React from "react";
-import Register from "./pages/register/register";
+
+import Routers from "./router/Routers";
+
 const App = () => {
   return (
-    <div className="App">
-      <Register />
-    </div>
+    <>
+      <Routers />
+    </>
   );
 };
 
