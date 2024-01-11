@@ -1,8 +1,9 @@
 import React, { useContext } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
-import Home from "../pages/home/home";
+
 import Login from "../pages/login/login";
 import Register from "../pages/register/register";
+import Message from "../pages/message/Message";
 import { AuthContext } from "../context/AuthContext";
 
 function Routers() {
@@ -15,7 +16,7 @@ function Routers() {
         <Route
           exact
           path="/"
-          element={user ? <Home /> : <Navigate to="/login" />}
+          element={user ? <Message /> : <Navigate to="/login" />}
         />
 
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />

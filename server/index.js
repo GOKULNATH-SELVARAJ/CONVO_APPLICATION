@@ -6,6 +6,8 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
+const conversationRoutes = require("./routes/conversation");
+const messageRoutes = require("./routes/message");
 const app = express();
 
 mongoose.connect("mongodb://localhost:27017/chat", {});
@@ -25,7 +27,9 @@ app.use(helmet());
 
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
-
+app.use("/api/conversation", conversationRoutes);
+app.use("/api/message", messageRoutes);
+ 
 app.listen(8080, () => {
   console.log("Server in Running");
 });
