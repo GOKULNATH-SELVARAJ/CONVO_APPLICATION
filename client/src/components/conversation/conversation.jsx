@@ -3,16 +3,17 @@ import "./conversation.scss";
 import pic from "../../assets/profile.jpg";
 import axios from "axios";
 import config from "../../apiUrl";
-const Conversation = ({ conversation, currentUser }) => {
+const Conversation = ({ conversation,currentUser }) => {
   const [user, setUser] = useState(null);
   useEffect(() => {
-    const frientId = conversation.member.find((m) => m !== currentUser._id);
+    const frientId = conversation.members.find((m) => m !== currentUser._id);
 
     const getUser = async () => {
       try {
         const res = await axios.get(`${config.apiUrl}users?userId=` + frientId);
+        console.log(res)
         setUser(res.data);
-        console.log(res.data);
+        
       } catch (error) {
         console.log(error);
       }

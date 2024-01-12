@@ -19,7 +19,7 @@ router.post("/", async (req, res) => {
 router.get("/:userId", async (req, res) => {
   try {
     const conversation = await Conversation.find({
-      members: { $in: [req.body.usedId] },
+      members: { $in: [req.params.userId] },
     });
     res.status(200).json(conversation);
   } catch (error) {

@@ -8,8 +8,6 @@ import { AuthContext } from "../context/AuthContext";
 
 function Routers() {
   const { user } = useContext(AuthContext);
-  console.log("in login ", user);
-
   return (
     <BrowserRouter>
       <Routes>

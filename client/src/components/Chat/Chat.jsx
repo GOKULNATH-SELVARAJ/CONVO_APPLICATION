@@ -1,17 +1,14 @@
 import React from "react";
 import "./Chat.scss";
 import pic from "../../assets/profile.jpg";
-const Chat = ({ own }) => {
+const Chat = ({ message, own }) => {
   return (
-    <div className={own ? "chat own" :"chat"}>
+    <div className={own ? "chat own" : "chat"}>
       <div className="chat-top">
         <img className="chat-img" src={pic} alt="" />
-        <p className="chat-text">
-          This is a basic example, and you may need to modify it based on your
-          specific requirements.
-        </p>
+        <p className="chat-text">{message.text}</p>
       </div>
-      <div className="chat-bottom">1 hour ago</div>
+      <div className="chat-bottom">{message.createdAt}</div>
     </div>
   );
 };
