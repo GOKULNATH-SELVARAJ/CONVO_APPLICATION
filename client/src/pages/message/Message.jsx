@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import config from "../../apiUrl";
 import "./Message.scss";
@@ -11,10 +11,28 @@ const Message = () => {
   const [conversation, setConversation] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [newMessages, setNewMessages] = useState("");
   const { user } = useContext(AuthContext);
+  const scrollRef = useRef();
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    const message = {
+      conversationId: currentChat._id,
+      sender: user._id,
+      text: newMessages,
+    };
+    try {
+      const res = await axios.post(`${config.apiUrl}message`, message);
+      setMessages([...messages, res.data]);
+      setNewMessages("");
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   useEffect(() => {
-    const getConversation = async (req, res) => {
+    const getConversation = async () => {
       try {
         const response = await axios.get(
           `${config.apiUrl}conversation/` + user._id
@@ -41,6 +59,14 @@ const Message = () => {
     getMessages();
   }, [currentChat]);
 
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    // scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [messages]);
+
   return (
     <>
       <div>
@@ -62,16 +88,23 @@ const Message = () => {
             {currentChat ? (
               <>
                 <div className="chat-Box-top">
-                  {messages.map((m) => {
-                    <Chat message={m} own={m.sender === user._id} />;
-                  })}
+                  {messages.map((m) => (
+                    <div ref={scrollRef}>
+                      {" "}
+                      <Chat message={m} own={m.sender === user._id} />
+                    </div>
+                  ))}
                 </div>
                 <div className="chat-Box-bottom">
                   <textarea
                     className="chat-Box-input"
                     placeholder="Type a message..."
+                    onChange={(e) => setNewMessages(e.target.value)}
+                    value={newMessages}
                   />
-                  <button className="chat-Box-btn">send</button>
+                  <button className="chat-Box-btn" onClick={handleSend}>
+                    send
+                  </button>
                 </div>
               </>
             ) : (
