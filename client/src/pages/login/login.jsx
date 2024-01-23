@@ -25,6 +25,7 @@ const Login = () => {
     navigation("/");
   };
 
+  
   console.log(user);
   return (
     <div className="container-login">
@@ -52,7 +53,7 @@ const Login = () => {
             minLength={8}
           />
         </div>
-        <button type="submit" className="login-button">
+        <button type="submit" className="login-button" >
           LOGIN
         </button>
         <div className="OR">OR</div>

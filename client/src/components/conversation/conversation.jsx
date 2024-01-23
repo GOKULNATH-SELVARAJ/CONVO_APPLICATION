@@ -11,7 +11,7 @@ const Conversation = ({ conversation,currentUser }) => {
     const getUser = async () => {
       try {
         const res = await axios.get(`${config.apiUrl}users?userId=` + frientId);
-        console.log(res)
+        
         setUser(res.data);
         
       } catch (error) {

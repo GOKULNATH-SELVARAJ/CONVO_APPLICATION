@@ -6,6 +6,10 @@ import Conversation from "../../components/conversation/conversation";
 import Topbar from "../../components/topbar/topbar";
 import Chat from "../../components/Chat/Chat";
 import { AuthContext } from "../../context/AuthContext";
+import { io } from "socket.io-client";
+
+const ENDPOINT = "http://localhost:8080";
+var socket, selectedChatCompare;
 
 const Message = () => {
   const [conversation, setConversation] = useState([]);
@@ -13,23 +17,20 @@ const Message = () => {
   const [messages, setMessages] = useState([]);
   const [newMessages, setNewMessages] = useState("");
   const { user } = useContext(AuthContext);
+  const [socketConnected, setSocketConnected] = useState(false);
   const scrollRef = useRef();
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    const message = {
-      conversationId: currentChat._id,
-      sender: user._id,
-      text: newMessages,
+  
+  useEffect(() => {
+    socket = io(ENDPOINT);
+    socket.emit("setup", user);
+    socket.on("connection", () => {
+      setSocketConnected(true);
+    });
+    return () => {
+      socket.disconnect();
     };
-    try {
-      const res = await axios.post(`${config.apiUrl}message`, message);
-      setMessages([...messages, res.data]);
-      setNewMessages("");
-    } catch (error) {
-      console.log(error);
-    }
-  };
+  }, []);
 
   useEffect(() => {
     const getConversation = async () => {
@@ -38,6 +39,10 @@ const Message = () => {
           `${config.apiUrl}conversation/` + user._id
         );
         setConversation(response.data);
+        console.log(
+          "conversation:-",
+          response.data.map((c) => c.members)
+        );
       } catch (err) {
         console.log(err);
       }
@@ -52,11 +57,20 @@ const Message = () => {
           `${config.apiUrl}message/` + currentChat?._id
         );
         setMessages(res.data);
+        // console.log("message res", res.data);
+        console.log(
+          "currenct chtat:- ",
+          currentChat.members,
+          "user:-",
+          user._id
+        );
+        socket.emit("join chat", currentChat?._id);
       } catch (error) {
         console.log(error);
       }
     };
     getMessages();
+    selectedChatCompare = currentChat;
   }, [currentChat]);
 
   useEffect(() => {
@@ -64,8 +78,43 @@ const Message = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
     // scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-    scrollRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  useEffect(() => {
+    // Listen for new messages in the chat room
+    socket.on("message received", (newMessage) => {
+      // Update the state to include the new message
+      setMessages((prevMessages) => [...prevMessages, newMessage]);
+    });
+
+    return () => {
+      // Cleanup the event listener when the component unmounts
+      socket.off("message received");
+    };
+  }, [currentChat]);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    const message = {
+      sender: user._id,
+      text: newMessages,
+      conversationId: currentChat._id,
+    };
+    // console.log("first", currentChat);
+    const recevierId = currentChat.members.find((m) => m !== user._id);
+    console.log("recevier:-",recevierId);
+
+    try {
+      const res = await axios.post(`${config.apiUrl}message`, message);
+      console.log("message:-", res.data);
+      socket.emit("send message", res.data,recevierId);
+      setMessages([...messages, res.data]);
+      setNewMessages("");
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   return (
     <>
@@ -89,9 +138,12 @@ const Message = () => {
               <>
                 <div className="chat-Box-top">
                   {messages.map((m) => (
-                    <div ref={scrollRef}>
-                      {" "}
-                      <Chat message={m} own={m.sender === user._id} />
+                    <div ref={scrollRef} key={m._id}>
+                      <Chat
+                        key={m._id}
+                        message={m}
+                        own={m.sender === user._id}
+                      />
                     </div>
                   ))}
                 </div>
