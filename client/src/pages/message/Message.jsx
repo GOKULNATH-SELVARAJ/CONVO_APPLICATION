@@ -7,9 +7,10 @@ import Topbar from "../../components/topbar/topbar";
 import Chat from "../../components/Chat/Chat";
 import { AuthContext } from "../../context/AuthContext";
 import { io } from "socket.io-client";
+import { MdPersonAddAlt1 } from "react-icons/md";
 
 const ENDPOINT = "http://localhost:8080";
-var socket, selectedChatCompare;
+var socket;
 
 const Message = () => {
   const [conversation, setConversation] = useState([]);
@@ -17,10 +18,9 @@ const Message = () => {
   const [messages, setMessages] = useState([]);
   const [newMessages, setNewMessages] = useState("");
   const { user } = useContext(AuthContext);
-  const [socketConnected, setSocketConnected] = useState(false);
+  const [setSocketConnected] = useState(false);
   const scrollRef = useRef();
 
-  
   useEffect(() => {
     socket = io(ENDPOINT);
     socket.emit("setup", user);
@@ -70,7 +70,6 @@ const Message = () => {
       }
     };
     getMessages();
-    selectedChatCompare = currentChat;
   }, [currentChat]);
 
   useEffect(() => {
@@ -103,12 +102,12 @@ const Message = () => {
     };
     // console.log("first", currentChat);
     const recevierId = currentChat.members.find((m) => m !== user._id);
-    console.log("recevier:-",recevierId);
+    console.log("recevier:-", recevierId);
 
     try {
       const res = await axios.post(`${config.apiUrl}message`, message);
       console.log("message:-", res.data);
-      socket.emit("send message", res.data,recevierId);
+      socket.emit("send message", res.data, recevierId);
       setMessages([...messages, res.data]);
       setNewMessages("");
     } catch (error) {
@@ -124,7 +123,10 @@ const Message = () => {
       <div className="message-Box">
         <div className="chat-Menu">
           <div className="chatMenu-Wrap">
-            <input placeholder="Search" className="chat-Search" />
+            <div className="chat-search-and-add">
+              <input placeholder="Search..." className="chat-Search" />
+              <MdPersonAddAlt1 size={35} onClick={() => console.log(" ")} />
+            </div>
             {conversation.map((c) => (
               <div key={c._id} onClick={() => setCurrentChat(c)}>
                 <Conversation key={c._id} conversation={c} currentUser={user} />

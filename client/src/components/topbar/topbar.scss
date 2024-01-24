@@ -1,15 +1,14 @@
 .topbar-container {
   height: 80px;
-  width: 100%;
-  background-color: rgb(4, 169, 169);
+  background-color: rgb(95, 128, 251);
   display: flex;
   align-items: center;
   position: sticky;
-  top: 0;
+  justify-content: space-evenly;
   .topbar-left {
-    flex: 7;
+    display: flex;
     text-align: center;
-    margin-right: 550px;
+    justify-content: flex-end;
   }
   .logo {
     color: rgb(255, 255, 255);
@@ -17,17 +16,35 @@
     font-size: x-large;
   }
   .topbar-right {
-    justify-content: center;
     display: flex;
-    flex: 4;
-    align-items: center;
-    gap: 5rem;
-
+    align-items: flex-end;
+    text-align: end;
+    justify-content: space-around;
+    gap: 8rem;
+    margin-left: 28rem;
+    .new-chat-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 30px;
+      width: 7rem;
+      height: 4rem;
+      border: none;
+      font-size: larger;
+      font-weight: bolder;
+      background: rgb(172, 151, 249);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+    }
     .topbar-img {
       align-items: end;
-      width: 67px;
-      height: 67px;
+      width: 50px;
+      height: 50px;
       border-radius: 35px;
+      cursor: pointer;
+    }
+    .logout {
+      cursor: pointer;
     }
   }
 }
