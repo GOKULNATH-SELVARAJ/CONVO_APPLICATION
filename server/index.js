@@ -22,6 +22,7 @@ dotenv.config();
 //middleware
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static("uploads"));
 // app.use(morgan("common"));
 // app.use(helmet());
 
@@ -56,9 +57,9 @@ io.on("connection", (socket) => {
     console.log(`User joined this room ${room}`);
   });
 
-  socket.on("send message", (newMessageRecieved,recevier) => {
+  socket.on("send message", (newMessageRecieved, recevier) => {
     // socket.in(user._id).emit("message recieved", newMessageRecieved);
-    console.log("newMessage:-",newMessageRecieved.text);
+    console.log("newMessage:-", newMessageRecieved.text);
     console.log(recevier);
     let userId = newMessageRecieved.sender;
     // console.log("userID:-", userId);

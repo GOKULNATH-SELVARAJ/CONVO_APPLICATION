@@ -1,25 +1,69 @@
 .conversation {
   display: flex;
-  width: 80%;
+  flex-direction: row;
   align-items: center;
-  padding: 10px;
   margin-top: 20px;
+  margin-bottom: 20px;
   cursor: pointer;
-  ;
-  &:hover {
-    background-color: #a1b9dc;
+  .conversation-wrapper {
+    width: 100%;
   }
   .conversation-img {
-    width: 50px;
-    height: 50px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
     object-fit: cover;
     margin-right: 20px;
   }
-  .conversation-title {
-    text-align: left;
-    font-size: 18px;
-    color: #333;
+  .conversation-text {
+    display: flex;
+    justify-content: space-between;
+    padding-right: 1rem;
+    // gap: 5rem;
+    .conversation-title {
+      text-align: left;
+      font-size: 20px;
+      font-family: Verdana, Geneva, Tahoma, sans-serif;
+      color: #333;
+      font-weight: bolder;
+    }
+    .conversation-time {
+      display: flex;
+      font-size: small;
+      align-items: center;
+      text-align: end;
+      font-weight: lighter;
+      font-size: 13px;
+      color: #383839;
+    }
+  }
+  .lastMessage {
+    font-size: medium;
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+    
+    color: #6e7073;
+  }
+}
+.conversation:hover,
+.conversation:focus {
+  background-color: #b0b9c6;
+  border-radius: 25px;
+}
+
+.new-message {
+  display: flex;
+  margin-top: 5px;
+  justify-content: space-between;
+  padding-right: 1rem;
+  .unread{
+    display: flex;
+    font-size: 14px;
+    align-items: center;
+    height: 18px;
+    justify-content: center;
     font-weight: bold;
+    background-color: rgb(172, 151, 249);
+    width: 14px;
+    border-radius: 35px;
   }
 }

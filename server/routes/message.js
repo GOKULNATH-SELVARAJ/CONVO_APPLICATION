@@ -25,4 +25,19 @@ router.get("/:conversationId", async (req, res) => {
     res.status(500).json(error);
   }
 });
+
+router.get("/last/:conversationId", async (req, res) => {
+  try {
+    const lastMessage = await Message.findOne({
+      conversationId: req.params.conversationId,
+    })
+      .sort({ createdAt: -1 }) // Sort in descending order based on createdAt
+      .limit(1);
+
+    res.status(200).json(lastMessage);
+  } catch (error) {
+    res.status(500).json(error);
+  }
+});
+
 module.exports = router;

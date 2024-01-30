@@ -20,9 +20,9 @@ const userSchema = mongoose.Schema(
       required: true,
       max: 8,
     },
-    isAdmin: {
-      type: Boolean,
-      default: false,
+    profile: {
+      type: String,
+      required: true,
     },
   },
   { timestamps: true }

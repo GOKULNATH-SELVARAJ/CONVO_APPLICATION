@@ -2,14 +2,14 @@ import React, { useContext, useRef } from "react";
 import "./login.scss";
 import { MdEmail } from "react-icons/md";
 import { FaLock } from "react-icons/fa6";
-import { LoginCall } from "../../apiCall";
+import { LoginCall } from "../../utils/apiCall";
 import { AuthContext } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 const Login = () => {
   const email = useRef();
   const password = useRef();
-  const { user, isFetching, error, dispatch } = useContext(AuthContext);
+  const { user, dispatch } = useContext(AuthContext);
   const navigation = useNavigate();
 
   const handleRegister = () => {
@@ -25,8 +25,7 @@ const Login = () => {
     navigation("/");
   };
 
-  
-  console.log(user);
+  // console.log(user);
   return (
     <div className="container-login">
       <form className="login-content" onSubmit={handleSubmit}>
@@ -53,7 +52,7 @@ const Login = () => {
             minLength={8}
           />
         </div>
-        <button type="submit" className="login-button" >
+        <button type="submit" className="login-button">
           LOGIN
         </button>
         <div className="OR">OR</div>

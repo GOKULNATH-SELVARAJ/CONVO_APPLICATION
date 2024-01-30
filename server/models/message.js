@@ -8,12 +8,20 @@ const messageSchema = new mongoose.Schema(
     sender: {
       type: String,
     },
-   
     text: {
       type: String,
+    },
+    date: {
+      type: Date,
     },
   },
   { timestamps: true }
 );
+messageSchema.pre("save", function (next) {
+  if (!this.date) {
+    this.date = new Date();
+  }
+  next();
+});
 
 module.exports = mongoose.model("Message", messageSchema);
