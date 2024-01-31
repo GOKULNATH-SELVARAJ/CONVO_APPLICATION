@@ -26,6 +26,7 @@ const Message = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const scrollRef = useRef();
   const [showModal, setShowModal] = useState(false);
+  console.log("curent", currentChat);
 
   const handleOpenModal = () => {
     setShowModal(true);
@@ -65,7 +66,7 @@ const Message = () => {
 
   useEffect(() => {
     getConversation();
-  }, [user._id]);
+  }, [user._id,messages]);
 
   const updateConversation = async () => {
     try {
@@ -140,6 +141,9 @@ const Message = () => {
 
   const handleSend = async (e) => {
     e.preventDefault();
+    if (!newMessages.trim()) {
+      return;
+    }
     const message = {
       sender: user._id,
       text: newMessages,
@@ -166,18 +170,18 @@ const Message = () => {
         <div className="chat-Menu">
           <div className="chatMenu-Wrap">
             <div className="chat-search-and-add">
-             <div className="searchuser">
-             <FaSearch className="Search-icon" />
-              <input
-                placeholder="Search..."
-                className="chat-Search"
-                value={input}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-             </div>
+              <div className="searchuser">
+                <FaSearch className="Search-icon" />
+                <input
+                  placeholder="Search..."
+                  className="chat-Search"
+                  value={input}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+              </div>
               <MdPersonAddAlt1 size={35} onClick={handleOpenModal} />
             </div>
-            <div className="User-list">
+            {/* <div className="User-list">
               {chatUser.map((uname) => (
                 <div
                   key={uname._id}
@@ -187,9 +191,10 @@ const Message = () => {
                   {uname.username}
                 </div>
               ))}
-            </div>
+            </div> */}
             {conversation.map((c) => (
-              <div key={c._id} onClick={() => setCurrentChat(c)}>
+  
+  <div style={{borderBottom:"1px solid  #ddd"}} key={c._id} onClick={() => setCurrentChat(c)}>
                 <Conversation key={c._id} conversation={c} currentUser={user} />
               </div>
             ))}
@@ -207,6 +212,7 @@ const Message = () => {
                         key={m._id}
                         message={m}
                         own={m.sender === user._id}
+                        currentChat={currentChat}
                       />
                     </div>
                   ))}

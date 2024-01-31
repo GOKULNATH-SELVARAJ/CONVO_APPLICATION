@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const Message = require("../models/message");
+const Conversation = require("../models/Conversation");
 
 //Add Message
 router.post("/", async (req, res) => {
@@ -7,6 +8,11 @@ router.post("/", async (req, res) => {
 
   try {
     const savedMessage = await newMessage.save();
+    await Conversation.findOneAndUpdate(
+      { _id: req.body.conversationId },
+      { lastMessageAt: new Date() },
+      { new: true }
+    );
     res.status(200).json(savedMessage);
   } catch (error) {
     return res.status(400).json(error);

@@ -4,7 +4,7 @@
   .chat-Menu {
     // flex: 3;
     width: 25%;
-    background-color: #e2e6ec;
+    background-color: #ffffff;
     .chatMenu-Wrap {
       display: flex;
       border-radius: 25px;
@@ -49,6 +49,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      background-image: url("../../assets/chat_area.jpg");
       // position: relative;
       .noConversation {
         display: flex;
@@ -56,7 +57,7 @@
         margin: auto;
         font-weight: bolder;
         font-size: 50px;
-        color: gray;
+        color: rgb(6, 6, 6);
       }
       .chat-Box-top {
         // height: 90%;
