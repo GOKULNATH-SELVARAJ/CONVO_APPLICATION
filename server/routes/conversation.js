@@ -40,7 +40,7 @@ router.get("/:userId", async (req, res) => {
     }).sort({ lastMessageAt: -1 }).limit();
     res.status(200).json(conversation);
   } catch (error) {
-    res.status(500).json(err);
+    res.status(500).json(error);
   }
 });
 

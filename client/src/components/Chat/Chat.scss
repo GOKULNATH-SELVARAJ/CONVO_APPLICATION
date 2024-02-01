@@ -20,12 +20,21 @@
       justify-content: center;
       text-align: justify;
       font-size: larger;
-      background-color: rgb(7 89 22);
-      border-top-right-radius: 20px;
-      border-bottom-right-radius: 20px;
-      border-bottom-left-radius: 20px;
-      color: rgb(255, 255, 255);
+      background-color: rgb(211, 210, 250);
+      border-top-right-radius: 12px;
+      border-bottom-right-radius: 12px;
+      border-bottom-left-radius: 12px;
+      color: rgb(0, 0, 0);
       max-width: 500px;
+    }
+    .chat-time {
+      display: flex;
+      text-align: end;
+      font-size: 10px;
+      margin-left: 3rem;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.2rem;
     }
   }
   .chat-bottom {
@@ -47,9 +56,9 @@
   font-size: larger;
   justify-content: center;
   text-align: justify;
-  border-top-left-radius: 20px;
-  border-bottom-right-radius: 20px;
-  border-bottom-left-radius: 20px;
+  border-top-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  border-bottom-left-radius: 12px;
   color: rgb(0, 0, 0);
   max-width: 500px;
 }

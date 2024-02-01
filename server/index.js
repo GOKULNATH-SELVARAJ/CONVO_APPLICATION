@@ -9,6 +9,8 @@ const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
 const app = express();
+const message = require("../server/models/message");
+const Conversation = require("./models/Conversation");
 
 mongoose.connect("mongodb://localhost:27017/chat", {});
 
@@ -58,11 +60,50 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send message", (newMessageRecieved, recevier) => {
-    // socket.in(user._id).emit("message recieved", newMessageRecieved);
-    console.log("newMessage:-", newMessageRecieved.text);
-    console.log(recevier);
-    let userId = newMessageRecieved.sender;
-    // console.log("userID:-", userId);
-    socket.to(recevier).emit("message received", newMessageRecieved);
+    const updatedMessage = { ...newMessageRecieved, seen: false };
+    socket.to(recevier).emit("message received", updatedMessage);
+
+    // Also, emit the unseen count to the sender
+    io.to(socket.id).emit("unseen count", {
+      conversationId: newMessageRecieved.conversationId,
+      count: 1,
+    });
+  });
+
+  socket.on("markAsSeen", async ({ conversationId, userId }) => {
+    try {
+      await message.updateMany(
+        { conversationId: conversationId, seen: false },
+        { $set: { seen: true } }
+      );
+      await Conversation.updateOne(
+        { _id: conversationId },
+        { $set: { "lastMessageAt.seen": true } }
+      );
+      const unseenCount = await message.countDocuments({ conversationId, seen: false });
+      io.to(userId).emit("unseen count", { conversationId, count: unseenCount });
+    } catch (error) {
+      console.log(error);
+    }
+  });
+  socket.on("message received", (newMessage) => {
+    // Update the unseen messages count in the conversation
+    Conversation.updateOne(
+      { _id: newMessage.conversationId },
+      { $inc: { unseenMessagesCount: 1 } },
+      (err, result) => {
+        if (err) {
+          console.error(err);
+        } else {
+          // Broadcast the updated conversation to all clients
+          io.emit("conversation updated", {
+            conversationId: newMessage.conversationId,
+          });
+        }
+      }
+    );
+
+    // Broadcast the new message to the conversation
+    io.to(newMessage.conversationId).emit("message received", newMessage);
   });
 });

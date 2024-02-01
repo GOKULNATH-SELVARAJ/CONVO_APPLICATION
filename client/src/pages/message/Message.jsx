@@ -17,7 +17,7 @@ var socket;
 
 const Message = () => {
   const [conversation, setConversation] = useState([]);
-  const [currentChat, setCurrentChat] = useState(null);
+  const [currentChat, setCurrentChat] = useState("");
   const [messages, setMessages] = useState([]);
   const [newMessages, setNewMessages] = useState("");
   const [input, setInput] = useState("");
@@ -26,15 +26,15 @@ const Message = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const scrollRef = useRef();
   const [showModal, setShowModal] = useState(false);
-  console.log("curent", currentChat);
 
   const handleOpenModal = () => {
     setShowModal(true);
   };
-
+  // console.log("curr", currentChat, "currUwer");
   const handleCloseModel = () => {
     setShowModal(false);
   };
+
   useEffect(() => {
     socket = io(ENDPOINT);
     socket.emit("setup", user);
@@ -57,6 +57,7 @@ const Message = () => {
         "conversation:-",
         response.data.map((c) => c.members)
       );
+
       return response.data;
     } catch (err) {
       console.log(err);
@@ -66,7 +67,55 @@ const Message = () => {
 
   useEffect(() => {
     getConversation();
-  }, [user._id,messages]);
+  }, [user._id, messages]);
+
+  useEffect(() => {
+    const lastMessageFromRecevier =
+      messages.length && messages[messages.length - 1].sender !== user._id;
+  
+    
+    if (lastMessageFromRecevier && currentChat) {
+      socket.emit("markAsSeen", {
+        conversationId: currentChat._id,
+        userId: currentChat?.members.find((m) => m !== user._id),
+      });
+    }
+  
+    socket.on("messageSeen", ({ conversationId }) => {
+      if (currentChat._id === conversationId) {
+        setMessages((prev) => {
+          const updatedMessages = prev.map((message) => {
+            if (!message.seen) {
+              return {
+                ...message,
+                seen: true,
+              };
+            }
+            return message;
+          });
+          return updatedMessages;
+        });
+      }
+    });
+  
+  }, [socket, user._id, currentChat, messages]);
+
+  useEffect(() => {
+    socket.on("messageSeen", ({ conversationId }) => {
+      setConversation((prev) => {
+        const updateNewConversation = prev.map((conversations) => {
+          if (conversations._id === conversationId) {
+            return {
+              ...conversations,
+              seen: true,
+            };
+          }
+          return conversations;
+        });
+        return updateNewConversation;
+      });
+    });
+  }, [socket, setConversation]);
 
   const updateConversation = async () => {
     try {
@@ -84,11 +133,6 @@ const Message = () => {
           `${config.apiUrl}message/` + currentChat?._id
         );
         setMessages(res.data);
-        // const receiverId = currentChat.members.find((m) => m !== user._id);
-        // const receiverInfo = await axios.get(
-        //   `${config.apiUrl}users?userId=${receiverId}`
-        // );
-        // setReceiverName(receiverInfo.data.username)
         socket.emit("join chat", currentChat?._id);
       } catch (error) {
         console.log(error);
@@ -101,18 +145,14 @@ const Message = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-    // scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
   useEffect(() => {
-    // Listen for new messages in the chat room
     socket.on("message received", (newMessage) => {
-      // Update the state to include the new message
       setMessages((prevMessages) => [...prevMessages, newMessage]);
     });
     return () => {
-      // Cleanup the event listener when the component unmounts
       socket.off("message received");
     };
   }, [currentChat]);
@@ -193,9 +233,17 @@ const Message = () => {
               ))}
             </div> */}
             {conversation.map((c) => (
-  
-  <div style={{borderBottom:"1px solid  #ddd"}} key={c._id} onClick={() => setCurrentChat(c)}>
-                <Conversation key={c._id} conversation={c} currentUser={user} />
+              <div
+                style={{ borderBottom: "1px solid  #ddd" }}
+                key={c._id}
+                onClick={() => setCurrentChat(c)}
+              >
+                <Conversation
+                  key={c._id}
+                  message={messages}
+                  conversation={c}
+                  currentUser={user}
+                />
               </div>
             ))}
           </div>

@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import "./conversation.scss";
 import pic from "../../assets/profile.jpg";
 import axios from "axios";
+import { BiCheckDouble } from "react-icons/bi";
 import config from "../../utils/apiUrl";
 import { getTimeAndDate, getProfile } from "../../utils/function";
 
-const Conversation = ({ conversation, currentUser }) => {
+const Conversation = ({ conversation, currentUser, message }) => {
   const [user, setUser] = useState(null);
   const [profilePic, setProfilePic] = useState(null);
   const [lastMessage, setLastMessage] = useState(null);
@@ -18,7 +19,6 @@ const Conversation = ({ conversation, currentUser }) => {
 
   const getUser = async () => {
     try {
-      console.log("curr", currentUser._id);
       const friendId = conversation.members.find((m) => m !== currentUser._id);
       const res = await axios.get(`${config.apiUrl}users?userId=${friendId}`);
       setUser(res.data);
@@ -74,17 +74,24 @@ const Conversation = ({ conversation, currentUser }) => {
             {lastMessage && getTimeAndDate(lastMessage.date)}
           </p>
         </div>
-        {lastMessage && (
-          <p className="lastMessage">{truncateMessage(lastMessage.text, 5)}</p>
-        )}
-        {/* {lastMessage && (
-          <div className="new-message">
-            <p className="lastMessage">
-              {truncateMessage(lastMessage.text, 5)}
-            </p>
-            <p className="unread">{2}</p>
-          </div>
-        )} */}
+        <div className="lastMessage-container">
+          {lastMessage && (
+            <>
+              {lastMessage.sender === currentUser._id ? (
+                <BiCheckDouble
+                  size={20}
+                  color={lastMessage.seen ? "	#00008B" : "grey"}
+                />
+              ) : (
+                ""
+              )}
+              <p className="lastMessage" style={{ color: lastMessage.seen ? "grey" : "red" , fontWeight:lastMessage.seen ?"":"bold"}}>
+                {truncateMessage(lastMessage.text, 4)}
+              </p>
+              {/* <p className="messageCount">2</p> */}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -37,11 +37,19 @@
       color: #383839;
     }
   }
-  .lastMessage {
-    font-size: medium;
-    font-family: Verdana, Geneva, Tahoma, sans-serif;
-    
-    color: #6e7073;
+  .lastMessage-container {
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    .lastMessage {
+      font-size: medium;
+      font-family: Verdana, Geneva, Tahoma, sans-serif;
+      color: #6e7073;
+    }
+    .messageCount {
+      margin-left: auto;
+      margin-right: 1rem;
+    }
   }
 }
 .conversation:hover,
@@ -55,7 +63,7 @@
   margin-top: 5px;
   justify-content: space-between;
   padding-right: 1rem;
-  .unread{
+  .unread {
     display: flex;
     font-size: 14px;
     align-items: center;

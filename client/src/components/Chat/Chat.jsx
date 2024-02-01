@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from "react";
 import "./Chat.scss";
 import pic from "../../assets/profile.jpg";
 import moment from "moment";
+import { BiCheckDouble } from "react-icons/bi";
 import { AuthContext } from "../../context/AuthContext";
 import { getProfile } from "../../utils/function";
 
@@ -19,7 +20,7 @@ const Chat = ({ message, own, currentChat }) => {
   const fetchProfile = async () => {
     try {
       const friendId = currentChat.members.find((m) => m !== user._id);
-      const loggedUserId = currentChat.members.find((m) => m == user._id);
+      const loggedUserId = currentChat.members.find((m) => m === user._id);
       const image = await getProfile(friendId);
       setProfilePic(image);
       const userImage = await getProfile(loggedUserId);
@@ -31,16 +32,27 @@ const Chat = ({ message, own, currentChat }) => {
   useEffect(() => {
     fetchProfile();
   }, []);
+  
 
   return (
     <div className={own ? "chat own" : "chat"}>
       <div className="chat-top">
         <img className="chat-img" src={picture} alt="" />
         <div className="text">
-          <p className={own ? "chat-text-own" : "chat-text"}>{message.text}</p>
-          <p className="chat-bottom">
-            {moment(message.createdAt).format("hh:mm A")}
-          </p>
+          <div className={own ? "chat-text-own" : "chat-text"}>
+            <p>{message.text} </p>
+            <p className="chat-time">
+              {moment(message.createdAt).format("hh:mm A")}
+              {own ? (
+                <BiCheckDouble
+                  size={20}
+                  color={message.seen ? "#00008B" : "grey"}
+                />
+              ) : (
+                ""
+              )}
+            </p>
+          </div>
         </div>
       </div>
     </div>
