@@ -41,7 +41,7 @@ const ConversationModal = ({
 
   const newConversation = async (selectedUser) => {
     try {
-      const existingConversation = getExistingConversation(selectedUser);
+      const existingConversation =await getExistingConversation(selectedUser);
       if (existingConversation) {
         toast.error("The user already exists in your Chat!");
       } else {

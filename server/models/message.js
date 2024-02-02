@@ -13,6 +13,7 @@ const messageSchema = new mongoose.Schema(
     },
     date: {
       type: Date,
+      default: Date.now,
     },
     seen: {
       type: Boolean,
@@ -21,11 +22,6 @@ const messageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-messageSchema.pre("save", function (next) {
-  if (!this.date) {
-    this.date = new Date();
-  }
-  next();
-});
+messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 864000 });
 
 module.exports = mongoose.model("Message", messageSchema);

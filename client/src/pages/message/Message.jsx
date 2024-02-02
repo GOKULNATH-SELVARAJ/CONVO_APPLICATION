@@ -30,7 +30,6 @@ const Message = () => {
   const handleOpenModal = () => {
     setShowModal(true);
   };
-  // console.log("curr", currentChat, "currUwer");
   const handleCloseModel = () => {
     setShowModal(false);
   };
@@ -72,15 +71,14 @@ const Message = () => {
   useEffect(() => {
     const lastMessageFromRecevier =
       messages.length && messages[messages.length - 1].sender !== user._id;
-  
-    
+
     if (lastMessageFromRecevier && currentChat) {
       socket.emit("markAsSeen", {
         conversationId: currentChat._id,
         userId: currentChat?.members.find((m) => m !== user._id),
       });
     }
-  
+
     socket.on("messageSeen", ({ conversationId }) => {
       if (currentChat._id === conversationId) {
         setMessages((prev) => {
@@ -97,7 +95,6 @@ const Message = () => {
         });
       }
     });
-  
   }, [socket, user._id, currentChat, messages]);
 
   useEffect(() => {
@@ -125,6 +122,10 @@ const Message = () => {
       console.log(error);
     }
   };
+
+  useEffect(() => {
+    updateConversation();
+  }, []);
 
   useEffect(() => {
     const getMessages = async () => {

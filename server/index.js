@@ -12,7 +12,10 @@ const app = express();
 const message = require("../server/models/message");
 const Conversation = require("./models/Conversation");
 
-mongoose.connect("mongodb://localhost:27017/chat", {});
+
+
+mongoose.connect("mongodb://localhost:27017/chat", {}); //for local
+
 
 const connection = mongoose.connection;
 connection.once("open", () => {
@@ -80,8 +83,14 @@ io.on("connection", (socket) => {
         { _id: conversationId },
         { $set: { "lastMessageAt.seen": true } }
       );
-      const unseenCount = await message.countDocuments({ conversationId, seen: false });
-      io.to(userId).emit("unseen count", { conversationId, count: unseenCount });
+      const unseenCount = await message.countDocuments({
+        conversationId,
+        seen: false,
+      });
+      io.to(userId).emit("unseen count", {
+        conversationId,
+        count: unseenCount,
+      });
     } catch (error) {
       console.log(error);
     }
