@@ -12,10 +12,12 @@ const app = express();
 const message = require("../server/models/message");
 const Conversation = require("./models/Conversation");
 
+mongoose.connect(
+  "mongodb+srv://gokulnath:USgoki%403637@cluster1.jcoh5xk.mongodb.net/",
+  {}
+);
 
-
-mongoose.connect("mongodb://localhost:27017/chat", {}); //for local
-
+// mongoose.connect("mongodb://localhost:27017/chat", {}); //for local
 
 const connection = mongoose.connection;
 connection.once("open", () => {
@@ -49,17 +51,13 @@ const io = require("socket.io")(server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("A user Connected:-", socket.id);
-
   socket.on("setup", (userData) => {
     socket.join(userData._id);
-    console.log("User Data:- ", userData);
     socket.emit("connected");
   });
 
   socket.on("join chat", (room) => {
     socket.join(room);
-    console.log(`User joined this room ${room}`);
   });
 
   socket.on("send message", (newMessageRecieved, recevier) => {
@@ -96,7 +94,6 @@ io.on("connection", (socket) => {
     }
   });
   socket.on("message received", (newMessage) => {
-    // Update the unseen messages count in the conversation
     Conversation.updateOne(
       { _id: newMessage.conversationId },
       { $inc: { unseenMessagesCount: 1 } },
@@ -104,7 +101,6 @@ io.on("connection", (socket) => {
         if (err) {
           console.error(err);
         } else {
-          // Broadcast the updated conversation to all clients
           io.emit("conversation updated", {
             conversationId: newMessage.conversationId,
           });
@@ -112,7 +108,6 @@ io.on("connection", (socket) => {
       }
     );
 
-    // Broadcast the new message to the conversation
     io.to(newMessage.conversationId).emit("message received", newMessage);
   });
 });

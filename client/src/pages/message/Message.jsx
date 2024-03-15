@@ -52,11 +52,6 @@ const Message = () => {
       );
 
       setConversation(response.data);
-      console.log(
-        "conversation:-",
-        response.data.map((c) => c.members)
-      );
-
       return response.data;
     } catch (err) {
       console.log(err);
@@ -204,9 +199,9 @@ const Message = () => {
 
   return (
     <>
-      <div>
+      {/* <div>
         <Topbar />
-      </div>
+      </div> */}
       <div className="message-Box">
         <div className="chat-Menu">
           <div className="chatMenu-Wrap">
@@ -250,6 +245,9 @@ const Message = () => {
           </div>
         </div>
         <div className="chat-Box">
+          <div>
+            <Topbar />
+          </div>
           <div className="chatBox-Wrap">
             {currentChat ? (
               <>

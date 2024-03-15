@@ -5,7 +5,6 @@ import moment from "moment";
 export const getProfile = async (userId) => {
   try {
     const res = await axios.get(`${config.apiUrl}users?userId=${userId}`);
-    console.log(res.data.profile);
     return res.data.profile;
   } catch (error) {
     throw error;

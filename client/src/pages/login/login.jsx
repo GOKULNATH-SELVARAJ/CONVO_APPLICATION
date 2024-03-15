@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 const Login = () => {
   const email = useRef();
   const password = useRef();
-  const { user, dispatch } = useContext(AuthContext);
+  const {  dispatch } = useContext(AuthContext);
   const navigation = useNavigate();
 
   const handleRegister = () => {
@@ -25,7 +25,6 @@ const Login = () => {
     navigation("/");
   };
 
-  // console.log(user);
   return (
     <div className="container-login">
       <form className="login-content" onSubmit={handleSubmit}>
