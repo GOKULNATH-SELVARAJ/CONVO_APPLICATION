@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const morgan = require("morgan");
 const helmet = require("helmet");
 const dotenv = require("dotenv");
+dotenv.config();
+
 const cors = require("cors");
 const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
@@ -12,12 +14,7 @@ const app = express();
 const message = require("../server/models/message");
 const Conversation = require("./models/Conversation");
 
-mongoose.connect(
-  "mongodb+srv://gokulnath:USgoki%403637@cluster1.jcoh5xk.mongodb.net/",
-  {}
-);
-
-// mongoose.connect("mongodb://localhost:27017/chat", {}); //for local
+mongoose.connect(process.env.MONGO_URL, {});
 
 const connection = mongoose.connection;
 connection.once("open", () => {
