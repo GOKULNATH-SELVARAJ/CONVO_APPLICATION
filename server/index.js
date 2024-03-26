@@ -35,7 +35,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/conversation", conversationRoutes);
 app.use("/api/message", messageRoutes);
 
-const server = app.listen(8080, () => {
+const port = process.env.PORT || 3000;
+
+const server = app.listen(port, () => {
   console.log("Server in Running");
 });
 
