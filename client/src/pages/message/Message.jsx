@@ -12,7 +12,7 @@ import { BsFillSendFill } from "react-icons/bs";
 import { FaSearch } from "react-icons/fa";
 import ConversationModal from "../../components/ConvoModal/Modal";
 
-const ENDPOINT = "http://localhost:8080";
+const ENDPOINT = 'https://convo-application-1.onrender.com';
 var socket;
 
 const Message = () => {

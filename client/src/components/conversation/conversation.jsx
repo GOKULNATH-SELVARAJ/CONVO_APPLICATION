@@ -54,10 +54,10 @@ const Conversation = ({ conversation, currentUser, message }) => {
   useEffect(() => {
     getUser();
     getLastMessage();
-    const intervalId = setInterval(() => {
-      getLastMessage();
-    }, 1000);
-    return () => clearInterval(intervalId);
+    // const intervalId = setInterval(() => {
+    //   getLastMessage();
+    // }, 1000);
+    // return () => clearInterval(intervalId);
   }, [currentUser, conversation]);
 
   return (
