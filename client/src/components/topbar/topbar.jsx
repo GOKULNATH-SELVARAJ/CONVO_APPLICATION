@@ -12,7 +12,7 @@ const Topbar = () => {
   const navigation = useNavigate();
   const fetchProfile = async () => {
     try {
-      const res = await getProfile(user._id);
+      const res = await getProfile(user.user._id);
       setProfilePic(res);
     } catch (error) {
       console.log(error);
@@ -26,7 +26,7 @@ const Topbar = () => {
 
   useEffect(() => {
     fetchProfile();
-  }, [user._id]);
+  }, [user.user._id]);
 
   const handleProfile = () => {
     navigation("/profile");
@@ -35,7 +35,7 @@ const Topbar = () => {
   return (
     <div className="topbar-container">
       <div className="topbar-left">
-        <span className="logo">Hi {user.username}</span>
+        <span className="logo">Hi {user.user.username}</span>
       </div>
       <div className="topbar-right">
         <img

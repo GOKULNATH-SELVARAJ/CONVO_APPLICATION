@@ -3,6 +3,7 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const multer = require("multer");
 const path = require("path");
+const generateToken = require("../utils/generateToken");
 
 //Storage
 const storage = multer.diskStorage({
@@ -24,14 +25,22 @@ router.post("/register", upload.single("profile"), async (req, res) => {
   try {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(req.body.password, salt);
+    const userMail = await User.findOne({ email: req.body.email });
+    if (userMail) {
+      return res
+        .status(400)
+        .json({ error: true, message: "Email Id already exist" });
+    }
     const user = await new User({
       username: req.body.username,
       email: req.body.email,
       password: hashedPassword,
-      profile: req.file.path,
+      // profile: req.file.path,
     });
     await user.save();
-    res.status(200).json(user);
+    res
+      .status(200)
+      .json({ error: false, message: "Account created Successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).send("Internal Server Error");
@@ -52,8 +61,15 @@ router.post("/login", async (req, res) => {
     if (!validPassword) {
       return res.status(400).send("Invalid Password");
     }
-
-    res.status(200).json(user);
+    const { accessToken, refreshToken } = await generateToken(user);
+    // res.status(200).json(user)
+    res.status(200).json({
+      //error: false,
+      accessToken,
+      refreshToken,
+      user,
+      message: "Logged in Successfully",
+    });
   } catch (error) {
     console.log(error);
   }

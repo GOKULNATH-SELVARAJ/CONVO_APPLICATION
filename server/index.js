@@ -48,7 +48,7 @@ const io = require("socket.io")(server, {
     origin: "http://localhost:3000",
   },
 });
-
+console.log("sockerttt",io)
 io.on("connection", (socket) => {
   socket.on("setup", (userData) => {
     socket.join(userData._id);

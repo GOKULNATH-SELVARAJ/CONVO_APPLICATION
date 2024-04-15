@@ -46,7 +46,7 @@ const ConversationModal = ({
         toast.error("The user already exists in your Chat!");
       } else {
         await axios.post(`${config.apiUrl}conversation`, {
-          senderId: user._id,
+          senderId: user.user._id,
           receiverId: selectedUser._id,
         });
         onClose();
@@ -60,7 +60,7 @@ const ConversationModal = ({
   const getExistingConversation = (selectedUser) => {
     return conversation.find(
       (c) =>
-        c.members.includes(user._id) && c.members.includes(selectedUser._id)
+        c.members.includes(user.user._id) && c.members.includes(selectedUser._id)
     );
   };
 

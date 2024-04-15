@@ -5,11 +5,18 @@ import moment from "moment";
 import { BiCheckDouble } from "react-icons/bi";
 import { AuthContext } from "../../context/AuthContext";
 import { getProfile } from "../../utils/function";
+import axios from "axios";
+import config from "../../utils/apiUrl";
 
 const Chat = ({ message, own, currentChat }) => {
+  console.log("messages",message)
+  console.log("currentChat",currentChat)
+
   const { user } = useContext(AuthContext);
   const [profilePic, setProfilePic] = useState(null);
   const [userProfilePic, setUserProfilePic] = useState(null);
+  const [lastMessage, setLastMessage] = useState(message);
+console.log("lasttttttt",lastMessage)
   const picture = own
     ? userProfilePic
       ? `http://localhost:8080/${userProfilePic}`
@@ -19,8 +26,8 @@ const Chat = ({ message, own, currentChat }) => {
     : pic;
   const fetchProfile = async () => {
     try {
-      const friendId = currentChat.members.find((m) => m !== user._id);
-      const loggedUserId = currentChat.members.find((m) => m === user._id);
+      const friendId = currentChat.members.find((m) => m !== user?.user?._id);
+      const loggedUserId = currentChat.members.find((m) => m === user?.user?._id);
       const image = await getProfile(friendId);
       setProfilePic(image);
       const userImage = await getProfile(loggedUserId);
@@ -32,6 +39,26 @@ const Chat = ({ message, own, currentChat }) => {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  // const getLastMessage = async () => {
+  //   try {
+  //     const res = await axios.get(
+  //       `${config.apiUrl}message/last/${conversation._id}`
+  //     );
+  //     setLastMessage(res.data);
+  //   } catch (error) {
+  //     console.log(error);
+  //   }
+  // };
+
+  // useEffect(() => {
+  //   getLastMessage();
+  //   const intervalId = setInterval(() => {
+  //     getLastMessage();
+  //   }, 2000);
+  //   return () => clearInterval(intervalId);
+  // }, [currentUser, conversation]);
+
   
 
   return (

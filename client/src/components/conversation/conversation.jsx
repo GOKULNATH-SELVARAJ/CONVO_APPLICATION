@@ -16,10 +16,9 @@ const Conversation = ({ conversation, currentUser, message }) => {
     const truncated = words.slice(0, maxLength).join(" ");
     return words.length > maxLength ? `${truncated} ...` : truncated;
   };
-
   const getUser = async () => {
     try {
-      const friendId = conversation.members.find((m) => m !== currentUser._id);
+      const friendId = conversation.members.find((m) => m !== currentUser?._id);
       const res = await axios.get(`${config.apiUrl}users?userId=${friendId}`);
       setUser(res.data);
     } catch (error) {
@@ -54,10 +53,10 @@ const Conversation = ({ conversation, currentUser, message }) => {
   useEffect(() => {
     getUser();
     getLastMessage();
-    // const intervalId = setInterval(() => {
-    //   getLastMessage();
-    // }, 1000);
-    // return () => clearInterval(intervalId);
+    const intervalId = setInterval(() => {
+      getLastMessage();
+    }, 2000);
+    return () => clearInterval(intervalId);
   }, [currentUser, conversation]);
 
   return (

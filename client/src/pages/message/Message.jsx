@@ -12,7 +12,9 @@ import { BsFillSendFill } from "react-icons/bs";
 import { FaSearch } from "react-icons/fa";
 import ConversationModal from "../../components/ConvoModal/Modal";
 
-const ENDPOINT = 'https://convo-application-1.onrender.com';
+// const ENDPOINT = "https://convo-application-1.onrender.com";
+const ENDPOINT = "http://localhost:8080";
+
 var socket;
 
 const Message = () => {
@@ -26,7 +28,6 @@ const Message = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const scrollRef = useRef();
   const [showModal, setShowModal] = useState(false);
-
   const handleOpenModal = () => {
     setShowModal(true);
   };
@@ -48,9 +49,8 @@ const Message = () => {
   const getConversation = async () => {
     try {
       const response = await axios.get(
-        `${config.apiUrl}conversation/` + user._id
+        `${config.apiUrl}conversation/` + user.user._id
       );
-
       setConversation(response.data);
       return response.data;
     } catch (err) {
@@ -61,16 +61,16 @@ const Message = () => {
 
   useEffect(() => {
     getConversation();
-  }, [user._id, messages]);
+  }, [user.user._id, messages]);
 
   useEffect(() => {
     const lastMessageFromRecevier =
-      messages.length && messages[messages.length - 1].sender !== user._id;
+      messages.length && messages[messages.length - 1].sender !== user.user._id;
 
     if (lastMessageFromRecevier && currentChat) {
       socket.emit("markAsSeen", {
         conversationId: currentChat._id,
-        userId: currentChat?.members.find((m) => m !== user._id),
+        userId: currentChat?.members.find((m) => m !== user.user._id),
       });
     }
 
@@ -90,7 +90,7 @@ const Message = () => {
         });
       }
     });
-  }, [socket, user._id, currentChat, messages]);
+  }, [socket, user.user._id, currentChat, messages]);
 
   useEffect(() => {
     socket.on("messageSeen", ({ conversationId }) => {
@@ -181,11 +181,11 @@ const Message = () => {
       return;
     }
     const message = {
-      sender: user._id,
+      sender: user.user._id,
       text: newMessages,
       conversationId: currentChat._id,
     };
-    const recevierId = currentChat.members.find((m) => m !== user._id);
+    const recevierId = currentChat.members.find((m) => m !== user.user._id);
 
     try {
       const res = await axios.post(`${config.apiUrl}message`, message);
@@ -238,7 +238,7 @@ const Message = () => {
                   key={c._id}
                   message={messages}
                   conversation={c}
-                  currentUser={user}
+                  currentUser={user?.user}
                 />
               </div>
             ))}
@@ -258,7 +258,7 @@ const Message = () => {
                       <Chat
                         key={m._id}
                         message={m}
-                        own={m.sender === user._id}
+                        own={m.sender === user.user._id}
                         currentChat={currentChat}
                       />
                     </div>

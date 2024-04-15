@@ -22,7 +22,7 @@ const userSchema = mongoose.Schema(
     },
     profile: {
       type: String,
-      required: true,
+      // required: true,
     },
   },
   { timestamps: true }
