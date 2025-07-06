@@ -3,21 +3,24 @@ const mongoose = require("mongoose");
 const conversationSchema = new mongoose.Schema(
   {
     members: {
-      type: Array,
+      type: [String],
+      required: true,
     },
     lastMessageAt: {
       type: Date,
-      seen: {
-        type: Boolean,
-        default: false,
+      default: null,
+    },
+    lastMessage: [
+      {
+        id: String,
+        lastMessage: String,
+        unseenMessagesCount: Number,
+        seen: Boolean,
       },
-    },
-    unseenMessagesCount: {
-      type: Number,
-      default: 0,
-    },
+    ],
   },
   { timestamps: true }
 );
+
 
 module.exports = mongoose.model("Conversation", conversationSchema);

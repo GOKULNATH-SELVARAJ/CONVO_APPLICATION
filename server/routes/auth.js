@@ -61,12 +61,12 @@ router.post("/login", async (req, res) => {
     if (!validPassword) {
       return res.status(400).send("Invalid Password");
     }
-    const { accessToken, refreshToken } = await generateToken(user);
+    // const { accessToken, refreshToken } = await generateToken(user);
     // res.status(200).json(user)
     res.status(200).json({
       //error: false,
-      accessToken,
-      refreshToken,
+      // accessToken,
+      // refreshToken,
       user,
       message: "Logged in Successfully",
     });
