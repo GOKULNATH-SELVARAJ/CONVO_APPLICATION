@@ -1,112 +1,181 @@
+// server.js or index.js
 const express = require("express");
 const mongoose = require("mongoose");
-const morgan = require("morgan");
-const helmet = require("helmet");
-const dotenv = require("dotenv");
-dotenv.config();
-
 const cors = require("cors");
+const dotenv = require("dotenv");
+const http = require("http");
+const socketIO = require("socket.io");
+
+const Message = require("./models/message");
+const Conversation = require("./models/Conversation");
 const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
-const app = express();
-const message = require("../server/models/message");
-const Conversation = require("./models/Conversation");
-
-mongoose.connect(process.env.MONGO_URL, {});
-
-const connection = mongoose.connection;
-connection.once("open", () => {
-  console.log("MongoDB database connection established successfully");
-});
 
 dotenv.config();
 
-//middleware
+const app = express();
+const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: {
+    origin:
+      process.env.CLIENT_URL || "https://convo-application-1.onrender.com",
+    credentials: true,
+  },
+});
+
+mongoose.connect(process.env.MONGO_URL);
+mongoose.connection.once("open", () => {
+  console.log("✅ MongoDB connected successfully");
+});
+
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
-// app.use(morgan("common"));
-// app.use(helmet());
-
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/conversation", conversationRoutes);
 app.use("/api/message", messageRoutes);
 
-const port = process.env.PORT || 3000;
-
-const server = app.listen(port, () => {
-  console.log("Server in Running");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
 
-//Socket
+// ----------------------
+// 🔌 Socket.IO Events
+// ----------------------
+const onlineUsers = new Map(); // userId -> socketId
 
-const io = require("socket.io")(server, {
-  cors: {
-    origin: "https://convo-application-1.onrender.com",
-  },
-});
-console.log("sockerttt",io)
 io.on("connection", (socket) => {
+  console.log("🟢 New socket connected:", socket.id);
+
   socket.on("setup", (userData) => {
-    socket.join(userData._id);
-    socket.emit("connected");
+    if (userData?._id) {
+      onlineUsers.set(userData._id, socket.id);
+      socket.join(userData._id);
+      console.log(`✅ User joined personal room: ${userData._id}`);
+      socket.emit("connected");
+    }
   });
 
-  socket.on("join chat", (room) => {
-    socket.join(room);
+  socket.on("join chat", (roomId) => {
+    socket.join(roomId);
+    console.log(`🔗 Joined room: ${roomId}`);
   });
 
-  socket.on("send message", (newMessageRecieved, recevier) => {
-    const updatedMessage = { ...newMessageRecieved, seen: false };
-    socket.to(recevier).emit("message received", updatedMessage);
+  socket.on("send message", async (newMessage, receiverId) => {
+    try {
+      const clientsInRoom = io.sockets.adapter.rooms.get(
+        newMessage.conversationId
+      );
 
-    // Also, emit the unseen count to the sender
-    io.to(socket.id).emit("unseen count", {
-      conversationId: newMessageRecieved.conversationId,
-      count: 1,
-    });
+      const receiverSocketId = onlineUsers.get(receiverId);
+      const isReceiverInRoom = clientsInRoom?.has(receiverSocketId);
+
+      const messageWithSeenFlag = {
+        ...newMessage,
+        seen: isReceiverInRoom ? true : false,
+      };
+
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("message received", messageWithSeenFlag);
+        io.to(receiverSocketId).emit("conversation updated", {
+          conversationId: newMessage.conversationId,
+        });
+      }
+
+      io.to(newMessage.sender).emit("conversation updated", {
+        conversationId: newMessage.conversationId,
+      });
+
+      const conversation = await Conversation.findById(
+        newMessage.conversationId
+      );
+      if (!conversation) return;
+      console.log("newMessage.sender", newMessage.sender);
+
+      const updatedLastMessage = conversation.members.map((memberId) => ({
+        id: memberId,
+        lastMessage: newMessage.text,
+        unseenMessagesCount:
+          memberId === newMessage.sender ? 0 : isReceiverInRoom ? 0 : 1,
+        seen: isReceiverInRoom
+          ? isReceiverInRoom
+          : memberId !== newMessage.sender,
+      }));
+      console.log("updatedLastMessage", updatedLastMessage);
+
+      await Conversation.findByIdAndUpdate(
+        newMessage.conversationId,
+        {
+          lastMessage: updatedLastMessage,
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+        },
+        { new: true }
+      );
+
+      console.log(`✅ Updated conversation. Seen: ${isReceiverInRoom}`);
+    } catch (error) {
+      console.error("❌ Error in send message:", error);
+    }
   });
 
   socket.on("markAsSeen", async ({ conversationId, userId }) => {
+    if (!userId || !conversationId) return;
+
     try {
-      await message.updateMany(
-        { conversationId: conversationId, seen: false },
+      await Message.updateMany(
+        { conversationId, seen: false },
         { $set: { seen: true } }
       );
+
+      const conversation = await Conversation.findById(conversationId);
+      if (!conversation) return;
+
+      const updatedLastMessage = conversation.lastMessage.map((entry) => {
+        if (entry.id === userId) {
+          return {
+            ...entry.toObject(),
+            unseenMessagesCount: 0,
+            seen: true,
+          };
+        } else {
+          return {
+            ...entry.toObject(),
+            seen: false,
+          };
+        }
+      });
+
       await Conversation.updateOne(
         { _id: conversationId },
-        { $set: { "lastMessageAt.seen": true } }
+        {
+          $set: {
+            updatedAt: new Date(),
+            lastMessage: updatedLastMessage,
+          },
+        }
       );
-      const unseenCount = await message.countDocuments({
-        conversationId,
-        seen: false,
-      });
+
       io.to(userId).emit("unseen count", {
         conversationId,
-        count: unseenCount,
+        count: 0,
       });
     } catch (error) {
-      console.log(error);
+      console.error("❌ Error in markAsSeen:", error);
     }
   });
-  socket.on("message received", (newMessage) => {
-    Conversation.updateOne(
-      { _id: newMessage.conversationId },
-      { $inc: { unseenMessagesCount: 1 } },
-      (err, result) => {
-        if (err) {
-          console.error(err);
-        } else {
-          io.emit("conversation updated", {
-            conversationId: newMessage.conversationId,
-          });
-        }
-      }
-    );
 
-    io.to(newMessage.conversationId).emit("message received", newMessage);
+  socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        console.log("🔴 Disconnected user:", userId);
+        break;
+      }
+    }
   });
 });
