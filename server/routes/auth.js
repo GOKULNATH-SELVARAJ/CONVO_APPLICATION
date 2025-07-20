@@ -4,6 +4,10 @@ const bcrypt = require("bcrypt");
 const multer = require("multer");
 const path = require("path");
 const generateToken = require("../utils/generateToken");
+const {
+  getAlphabetColor,
+  generateAlphabetColors,
+} = require("../utils/colorGeneration"); // adjust path as needed
 
 //Storage
 const storage = multer.diskStorage({
@@ -21,29 +25,74 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Register
-router.post("/register", upload.single("profile"), async (req, res) => {
+
+router.post("/register", async (req, res) => {
   try {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(req.body.password, salt);
-    const userMail = await User.findOne({ email: req.body.email });
-    if (userMail) {
-      return res
-        .status(400)
-        .json({ error: true, message: "Email Id already exist" });
-    }
-    const user = await new User({
-      username: req.body.username,
-      email: req.body.email,
-      password: hashedPassword,
-      // profile: req.file.path,
+    const { username, email, password } = req.body;
+
+    // 1. Check if username or email already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }],
     });
+
+    if (existingUser) {
+      const field = existingUser.email === email ? "Email ID" : "Username";
+      return res.status(400).json({
+        success: false,
+        message: `${field} already exists`,
+      });
+    }
+
+    // 2. Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // 3. Generate color and ensure uniqueness
+    const alphabetColors = generateAlphabetColors();
+    let colorInfo = getAlphabetColor(username?.charAt(0)?.toUpperCase() || "A");
+
+    const isColorTaken = async (color) => {
+      return await User.findOne({
+        textColor: color.textColor,
+        backgroundColor: color.backgroundColor,
+      });
+    };
+
+    let attempts = 0;
+    while (
+      (await isColorTaken(colorInfo)) &&
+      attempts < alphabetColors.length
+    ) {
+      colorInfo = alphabetColors[(attempts + 1) % alphabetColors.length];
+      attempts++;
+    }
+
+    // 4. Create and save user
+    const user = new User({
+      username,
+      email,
+      password: hashedPassword,
+      textColor: colorInfo?.textColor,
+      profileBackgroundColor: colorInfo?.backgroundColor,
+      // profile: req.file?.path,
+    });
+
     await user.save();
-    res
-      .status(200)
-      .json({ error: false, message: "Account created Successfully" });
+
+    res.status(200).json({
+      success: true,
+      message: "Account created successfully",
+      data: {
+        userId: user._id,
+        username: user.username,
+        email: user.email,
+        textColor: user.textColor,
+        backgroundColor: user.profileBackgroundColor,
+      },
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).send("Internal Server Error");
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
 
@@ -52,7 +101,9 @@ router.post("/login", async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
     if (!user) {
-      return res.status(404).send("User not found");
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
     const validPassword = await bcrypt.compare(
       req.body.password,
@@ -64,11 +115,16 @@ router.post("/login", async (req, res) => {
     // const { accessToken, refreshToken } = await generateToken(user);
     // res.status(200).json(user)
     res.status(200).json({
-      //error: false,
-      // accessToken,
-      // refreshToken,
-      user,
-      message: "Logged in Successfully",
+      success: true,
+      message: "Logged in successfully",
+      data: {
+        userId: user._id,
+        username: user.username,
+        email: user.email,
+        textColor: user.textColor,
+        backgroundColor: user.profileBackgroundColor,
+        // profile: user.profile, // Uncomment if you return profile URL
+      },
     });
   } catch (error) {
     console.log(error);

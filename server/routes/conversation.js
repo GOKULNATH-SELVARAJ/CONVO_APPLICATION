@@ -3,33 +3,59 @@ const Conversation = require("../models/Conversation");
 
 //New conversation
 router.post("/", async (req, res) => {
-  // const { senderId, receiverId } = req.body;
+  const { senderId, receiverId } = req.body;
 
-  // const existingConversationSender = await Conversation.findOne({
-  //   members: { $all: [senderId, receiverId] },
-  // });
-
-  // const existingConversationReceiver = await Conversation.findOne({
-  //   members: { $all: [receiverId, senderId] },
-  // });
-
-  // if (existingConversationSender) {
-  //   return res.status(400).json(existingConversationSender);
-  // }
-
-  // if (existingConversationReceiver) {
-  //   return res.status(200).json(existingConversationReceiver);
-  // }
-  const newConversation = new Conversation({
-    members: [req.body.senderId, req.body.receiverId],
-  });
   try {
+    if (senderId === receiverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot create a conversation with yourself.",
+      });
+    }
+    
+    // Check if conversation already exists
+    const existingConversation = await Conversation.findOne({
+      members: { $all: [senderId, receiverId], $size: 2 },
+    });
+
+    if (existingConversation) {
+      return res.status(400).json({
+        success: false,
+        message: "A conversation between these users already exists.",
+      });
+    }
+
+    // If not, create new
+    const newConversation = new Conversation({
+      members: [senderId, receiverId],
+    });
+
     const savedConversation = await newConversation.save();
     res.status(200).json(savedConversation);
   } catch (err) {
+    console.log("err", err);
+    
     res.status(500).json(err);
   }
 });
+
+// const { senderId, receiverId } = req.body;
+
+// const existingConversationSender = await Conversation.findOne({
+//   members: { $all: [senderId, receiverId] },
+// });
+
+// const existingConversationReceiver = await Conversation.findOne({
+//   members: { $all: [receiverId, senderId] },
+// });
+
+// if (existingConversationSender) {
+//   return res.status(400).json(existingConversationSender);
+// }
+
+// if (existingConversationReceiver) {
+//   return res.status(200).json(existingConversationReceiver);
+// }
 
 //Get conversation
 

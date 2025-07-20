@@ -18,11 +18,15 @@ const userSchema = mongoose.Schema(
     password: {
       type: String,
       required: true,
-      max: 8,
+      min: 8,
     },
-    profile: {
+    textColor: {
       type: String,
-      // required: true,
+      required: true,
+    },
+    profileBackgroundColor: {
+      type: String,
+      required: true,
     },
   },
   { timestamps: true }
