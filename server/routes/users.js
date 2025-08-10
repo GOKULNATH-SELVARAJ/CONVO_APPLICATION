@@ -64,8 +64,8 @@ router.get("/", async (req, res) => {
 //Get all users
 router.get("/all", async (req, res) => {
   try {
-    const users = await User.find().select("-password");
-
+    const users = await User.find({ _id: { $ne: req.query.userId } }) // $ne = not equal
+      .select("-password");
     const formattedUsers = users.map((user) => ({
       userId: user._id,
       username: user.username,

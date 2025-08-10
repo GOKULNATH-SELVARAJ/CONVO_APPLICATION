@@ -52,10 +52,10 @@ io.on("connection", (socket) => {
   console.log("🟢 New socket connected:", socket.id);
 
   socket.on("setup", (userData) => {
-    if (userData?._id) {
-      onlineUsers.set(userData._id, socket.id);
-      socket.join(userData._id);
-      console.log(`✅ User joined personal room: ${userData._id}`);
+    if (userData?.userId) {
+      onlineUsers.set(userData.userId, socket.id);
+      socket.join(userData.userId);
+      console.log(`✅ User joined personal room: ${userData.userId}`);
       socket.emit("connected");
     }
   });
