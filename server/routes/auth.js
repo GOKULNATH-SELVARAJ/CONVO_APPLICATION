@@ -48,32 +48,42 @@ router.post("/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 3. Generate color and ensure uniqueness
+    const initial = username?.charAt(0)?.toUpperCase() || "A";
     const alphabetColors = generateAlphabetColors();
-    let colorInfo = getAlphabetColor(username?.charAt(0)?.toUpperCase() || "A");
 
-    const isColorTaken = async (color) => {
-      return await User.findOne({
+    const colorOptionsForInitial = alphabetColors.filter(
+      (color) => color.letter === initial
+    );
+
+    // Shuffle the color options to reduce collision probability
+    const shuffledColors = colorOptionsForInitial.sort(
+      () => 0.5 - Math.random()
+    );
+
+    let selectedColor = null;
+
+    for (const color of shuffledColors) {
+      const isTaken = await User.findOne({
         textColor: color.textColor,
-        backgroundColor: color.backgroundColor,
+        profileBackgroundColor: color.backgroundColor,
       });
-    };
 
-    let attempts = 0;
-    while (
-      (await isColorTaken(colorInfo)) &&
-      attempts < alphabetColors.length
-    ) {
-      colorInfo = alphabetColors[(attempts + 1) % alphabetColors.length];
-      attempts++;
+      if (!isTaken) {
+        selectedColor = color;
+        break;
+      }
     }
+
+    // Fallback to the default color if all options are taken
+    const finalColor = selectedColor || getAlphabetColor(initial);
 
     // 4. Create and save user
     const user = new User({
       username,
       email,
       password: hashedPassword,
-      textColor: colorInfo?.textColor,
-      profileBackgroundColor: colorInfo?.backgroundColor,
+      textColor: finalColor.textColor,
+      profileBackgroundColor: finalColor.backgroundColor,
       // profile: req.file?.path,
     });
 
@@ -123,6 +133,7 @@ router.post("/login", async (req, res) => {
         email: user.email,
         textColor: user.textColor,
         backgroundColor: user.profileBackgroundColor,
+        createdAt: user.createdAt,
         // profile: user.profile, // Uncomment if you return profile URL
       },
     });

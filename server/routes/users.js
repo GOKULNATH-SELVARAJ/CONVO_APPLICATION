@@ -64,11 +64,28 @@ router.get("/", async (req, res) => {
 //Get all users
 router.get("/all", async (req, res) => {
   try {
-    const users = await User.find();
-    //Sending response back with status and data
-    res.status(200).json(users);
+    const users = await User.find({ _id: { $ne: req.query.userId } }) // $ne = not equal
+      .select("-password");
+    const formattedUsers = users.map((user) => ({
+      userId: user._id,
+      username: user.username,
+      email: user.email,
+      textColor: user.textColor,
+      backgroundColor: user.profileBackgroundColor,
+      createdAt: user.createdAt,
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: "Users fetched successfully",
+      data: formattedUsers,
+    });
   } catch (error) {
-    res.status(500).json(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+      error: error.message,
+    });
   }
 });
 
