@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
+const admin = require("../notification/firebase");
 
 //Update user
 router.put("/:id", async (req, res) => {
@@ -73,6 +74,7 @@ router.get("/all", async (req, res) => {
       textColor: user.textColor,
       backgroundColor: user.profileBackgroundColor,
       createdAt: user.createdAt,
+      status: user.status,
     }));
 
     res.status(200).json({
@@ -89,4 +91,60 @@ router.get("/all", async (req, res) => {
   }
 });
 
+// Add FCM Token
+router.post("/add-token", async (req, res) => {
+  try {
+    const { userId, fcmToken } = req.body;
+    console.log("add-token");
+
+    if (!userId || !fcmToken) {
+      return res
+        .status(400)
+        .json({ message: "userId and fcmToken are required" });
+    }
+
+    await User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+
+    return res.json({
+      success: true,
+      message: "FCM token updated successfully",
+      fcmToken: fcmToken,
+    });
+  } catch (error) {
+    console.error("Error updating token", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+router.post("/send-notification", async (req, res) => {
+  try {
+    const { userId, title, body, data } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user?.fcmToken) {
+      return res
+        .status(404)
+        .json({ success: false, message: "FCM token not found" });
+    }
+    console.log("user.fcmToken", user.fcmToken);
+    const message = {
+      token: user.fcmToken,
+      // notification: { title, body },
+      android: {
+        priority: "high",
+      },
+      data: data || {}, // optional key/value pairs
+    };
+
+    await admin.messaging().send(message);
+
+    return res.json({
+      success: true,
+      message: "Notification sent successfully",
+    });
+  } catch (error) {
+    console.error("Error sending notification:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 module.exports = router;
