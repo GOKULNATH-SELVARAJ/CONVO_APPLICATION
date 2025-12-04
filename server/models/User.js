@@ -28,6 +28,10 @@ const userSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    fcmToken: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["online", "offline"],
