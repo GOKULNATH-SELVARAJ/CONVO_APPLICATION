@@ -144,16 +144,18 @@ io.on("connection", (socket) => {
         seen: isReceiverInsideChat,
       };
 
+      const savedMessage = await Message.create({
+        conversationId,
+        sender,
+        text,
+        seen: isReceiverInsideChat,
+        createdAt: new Date(),
+      });
+
       // 4️⃣ Send message to receiver if online
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit("message received", messageWithSeenFlag);
-        io.to(receiverSocketId).emit("conversation updated", {
-          conversationId,
-        });
+        io.to(receiverSocketId).emit("message received", savedMessage); // ⬅️ use savedMessage
       }
-
-      // Always notify sender to update their conversation list
-      io.to(sender).emit("conversation updated", { conversationId });
 
       // 5️⃣ Fetch conversation
       const conversation = await Conversation.findById(conversationId);
@@ -165,7 +167,6 @@ io.on("connection", (socket) => {
           (m) => m.id.toString() === memberId.toString()
         );
 
-        // Sender sees message as read and has zero unseen count
         if (memberId.toString() === sender.toString()) {
           return {
             id: memberId,
@@ -175,14 +176,13 @@ io.on("connection", (socket) => {
           };
         }
 
-        // Receiver behavior
         return {
           id: memberId,
           lastMessage: text,
-          seen: isReceiverInsideChat, // Blue tick only inside chat
+          seen: isReceiverInsideChat,
           unseenMessagesCount: isReceiverInsideChat
-            ? 0 // inside chat → instantly read
-            : (prev?.unseenMessagesCount || 0) + 1, // not in chat → add unseen
+            ? 0
+            : (prev?.unseenMessagesCount || 0) + 1,
         };
       });
 
@@ -192,14 +192,23 @@ io.on("connection", (socket) => {
         {
           lastMessage: updatedLastMessage,
           lastMessageAt: new Date(),
-          updatedAt: new Date(), // important for sorting chats
+          updatedAt: new Date(),
         },
         { new: true }
       );
+      const updatedConversations = await Conversation.find({
+        members: sender,
+      })
+        .sort({ lastMessageAt: -1 })
+        .limit();
 
-      console.log(
-        `📩 Message saved | Room: ${conversationId} | Seen: ${isReceiverInsideChat}`
-      );
+      if (updatedConversations) {
+        io.to(receiverSocketId).emit(
+          "conversation updated",
+          updatedConversations
+        );
+        io.to(sender).emit("conversation updated", updatedConversations);
+      }
     } catch (error) {
       console.error("❌ Error in send message:", error);
     }

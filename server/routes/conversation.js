@@ -19,9 +19,10 @@ router.post("/", async (req, res) => {
     });
 
     if (existingConversation) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: "A conversation between these users already exists.",
+        receiverId: receiverId,
       });
     }
 
@@ -61,33 +62,14 @@ router.post("/", async (req, res) => {
 
 router.get("/:userId", async (req, res) => {
   try {
-    const { userId } = req.params;
-
-    const conversations = await Conversation.find({
-      members: userId,
+    const conversation = await Conversation.find({
+      members: { $in: [req.params.userId] },
     })
-      .sort({ lastMessageAt: -1 }) // now that we track lastMessage time properly
-      .select("members lastMessage lastMessageAt updatedAt")
-      .lean();
-
-    // Attach receiver details for UI benefit
-    const formatted = conversations.map((conv) => {
-      const receiverId = conv.members.find((id) => id !== userId);
-
-      return {
-        _id: conv._id,
-        receiverId,
-        lastMessage: conv.lastMessage ?? null,
-        updatedAt: conv.updatedAt,
-        lastMessageAt: conv.lastMessageAt,
-        members: conv.members,
-      };
-    });
-
-    return res.status(200).json(formatted);
+      .sort({ lastMessageAt: -1 })
+      .limit();
+    res.status(200).json(conversation);
   } catch (error) {
-    console.error("❌ Error fetching conversations:", error);
-    return res.status(500).json({ message: "Server error" });
+    res.status(500).json(error);
   }
 });
 
