@@ -12,6 +12,7 @@ const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
+const User = require("./models/User");
 
 dotenv.config();
 
@@ -58,57 +59,136 @@ io.on("connection", (socket) => {
       console.log(`✅ User joined personal room: ${userData.userId}`);
       socket.emit("connected");
     }
+    socket.emit("online users", Array.from(onlineUsers.keys()));
+  });
+
+  socket.on("check user in room", ({ userId, roomId }, callback) => {
+    const clientsInRoom = io.sockets.adapter.rooms.get(roomId);
+    const userSocketId = onlineUsers.get(userId.toString());
+    console.log("check user in room");
+
+    const isUserInRoom = !!(
+      clientsInRoom &&
+      userSocketId &&
+      clientsInRoom.has(userSocketId)
+    );
+    console.log("isUserInRoom", isUserInRoom);
+
+    callback(isUserInRoom);
   });
 
   socket.on("join chat", (roomId) => {
     socket.join(roomId);
     console.log(`🔗 Joined room: ${roomId}`);
+    console.log("JOIN REQUEST RECEIVED:", roomId, typeof roomId);
+    // socket.join(roomId);
+    console.log("ROOMS FOR THIS SOCKET:", socket.rooms);
+  });
+
+  socket.on("userOnline", async (userId) => {
+    const logggg = await User.findByIdAndUpdate(
+      userId,
+      { status: "online" },
+      { new: true }
+    );
+    console.log("logggg", logggg);
+
+    io.emit("userStatus", { userId, status: "online" });
+  });
+
+  socket.on("userOffline", async (userId) => {
+    const logggg222 = await User.findByIdAndUpdate(
+      userId,
+      { status: "offline" },
+      { new: true }
+    );
+    console.log("logggg", logggg222);
+    io.emit("userStatus", { userId, status: "offline" });
+  });
+
+  socket.on("typing", ({ userId, receiverId }) => {
+    const receiverSocketId = onlineUsers.get(receiverId);
+    io.to(receiverSocketId).emit("typing", userId);
+  });
+
+  socket.on("stopTyping", ({ userId, receiverId }) => {
+    const receiverSocketId = onlineUsers.get(receiverId);
+    io.to(receiverSocketId).emit("stopTyping", userId);
+  });
+
+  socket.on("leave chat", ({ roomId, userId }) => {
+    socket.leave(roomId);
+    console.log(`🚪 User ${userId} left room ${roomId}`);
+
+    // Notify others in the same room
+    socket.to(roomId).emit("user left chat", { userId, roomId });
   });
 
   socket.on("send message", async (newMessage, receiverId) => {
     try {
-      const clientsInRoom = io.sockets.adapter.rooms.get(
-        newMessage.conversationId
-      );
+      const { conversationId, sender, text } = newMessage;
 
+      // 1️⃣ Find receiver's socket
       const receiverSocketId = onlineUsers.get(receiverId);
-      const isReceiverInRoom = clientsInRoom?.has(receiverSocketId);
 
+      // 2️⃣ Check if receiver is inside the chat room
+      const clientsInRoom = io.sockets.adapter.rooms.get(conversationId);
+      const isReceiverInsideChat =
+        receiverSocketId &&
+        clientsInRoom &&
+        clientsInRoom.has(receiverSocketId);
+
+      // 3️⃣ Add seen flag based on presence **inside room**
       const messageWithSeenFlag = {
         ...newMessage,
-        seen: isReceiverInRoom ? true : false,
+        seen: isReceiverInsideChat,
       };
 
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit("message received", messageWithSeenFlag);
-        io.to(receiverSocketId).emit("conversation updated", {
-          conversationId: newMessage.conversationId,
-        });
-      }
-
-      io.to(newMessage.sender).emit("conversation updated", {
-        conversationId: newMessage.conversationId,
+      const savedMessage = await Message.create({
+        conversationId,
+        sender,
+        text,
+        seen: isReceiverInsideChat,
+        createdAt: new Date(),
       });
 
-      const conversation = await Conversation.findById(
-        newMessage.conversationId
-      );
+      // 4️⃣ Send message to receiver if online
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("message received", savedMessage); // ⬅️ use savedMessage
+      }
+
+      // 5️⃣ Fetch conversation
+      const conversation = await Conversation.findById(conversationId);
       if (!conversation) return;
-      console.log("newMessage.sender", newMessage.sender);
 
-      const updatedLastMessage = conversation.members.map((memberId) => ({
-        id: memberId,
-        lastMessage: newMessage.text,
-        unseenMessagesCount:
-          memberId === newMessage.sender ? 0 : isReceiverInRoom ? 0 : 1,
-        seen: isReceiverInRoom
-          ? isReceiverInRoom
-          : memberId !== newMessage.sender,
-      }));
-      console.log("updatedLastMessage", updatedLastMessage);
+      // 6️⃣ Update lastMessage entry (WhatsApp logic)
+      const updatedLastMessage = conversation.members.map((memberId) => {
+        const prev = conversation.lastMessage?.find(
+          (m) => m.id.toString() === memberId.toString()
+        );
 
+        if (memberId.toString() === sender.toString()) {
+          return {
+            id: memberId,
+            lastMessage: text,
+            unseenMessagesCount: 0,
+            seen: true,
+          };
+        }
+
+        return {
+          id: memberId,
+          lastMessage: text,
+          seen: isReceiverInsideChat,
+          unseenMessagesCount: isReceiverInsideChat
+            ? 0
+            : (prev?.unseenMessagesCount || 0) + 1,
+        };
+      });
+
+      // 7️⃣ Store the updated conversation
       await Conversation.findByIdAndUpdate(
-        newMessage.conversationId,
+        conversationId,
         {
           lastMessage: updatedLastMessage,
           lastMessageAt: new Date(),
@@ -116,8 +196,19 @@ io.on("connection", (socket) => {
         },
         { new: true }
       );
+      const updatedConversations = await Conversation.find({
+        members: sender,
+      })
+        .sort({ lastMessageAt: -1 })
+        .limit();
 
-      console.log(`✅ Updated conversation. Seen: ${isReceiverInRoom}`);
+      if (updatedConversations) {
+        io.to(receiverSocketId).emit(
+          "conversation updated",
+          updatedConversations
+        );
+        io.to(sender).emit("conversation updated", updatedConversations);
+      }
     } catch (error) {
       console.error("❌ Error in send message:", error);
     }
@@ -135,20 +226,11 @@ io.on("connection", (socket) => {
       const conversation = await Conversation.findById(conversationId);
       if (!conversation) return;
 
-      const updatedLastMessage = conversation.lastMessage.map((entry) => {
-        if (entry.id === userId) {
-          return {
-            ...entry.toObject(),
-            unseenMessagesCount: 0,
-            seen: true,
-          };
-        } else {
-          return {
-            ...entry.toObject(),
-            seen: false,
-          };
-        }
-      });
+      const updatedLastMessage = conversation.lastMessage.map((entry) =>
+        entry.id.toString() === userId.toString()
+          ? { ...entry, unseenMessagesCount: 0, seen: true }
+          : entry
+      );
 
       await Conversation.updateOne(
         { _id: conversationId },
@@ -160,12 +242,34 @@ io.on("connection", (socket) => {
         }
       );
 
-      io.to(userId).emit("unseen count", {
-        conversationId,
-        count: 0,
+      // Notify sender that receiver has read the messages 👇
+      conversation.members.forEach((memberId) => {
+        if (memberId.toString() !== userId.toString()) {
+          const senderSocketId = onlineUsers.get(memberId.toString());
+          if (senderSocketId) {
+            io.to(senderSocketId).emit("messages seen", {
+              conversationId,
+              seenBy: userId, // receiver’s ID
+            });
+          }
+        }
       });
+
+      console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
     } catch (error) {
       console.error("❌ Error in markAsSeen:", error);
+    }
+  });
+
+  socket.on("get messages", async (conversationId, callback) => {
+    try {
+      const messages = await Message.find({ conversationId })
+        .sort({ createdAt: 1 })
+        .lean();
+      callback({ success: true, messages });
+    } catch (error) {
+      console.error("❌ Error fetching messages:", error);
+      callback({ success: false, messages: [] });
     }
   });
 

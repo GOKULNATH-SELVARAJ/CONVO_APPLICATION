@@ -12,16 +12,17 @@ router.post("/", async (req, res) => {
         message: "Cannot create a conversation with yourself.",
       });
     }
-    
+
     // Check if conversation already exists
     const existingConversation = await Conversation.findOne({
       members: { $all: [senderId, receiverId], $size: 2 },
     });
 
     if (existingConversation) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: "A conversation between these users already exists.",
+        receiverId: receiverId,
       });
     }
 
@@ -34,7 +35,7 @@ router.post("/", async (req, res) => {
     res.status(200).json(savedConversation);
   } catch (err) {
     console.log("err", err);
-    
+
     res.status(500).json(err);
   }
 });

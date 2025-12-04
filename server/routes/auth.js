@@ -134,6 +134,7 @@ router.post("/login", async (req, res) => {
         textColor: user.textColor,
         backgroundColor: user.profileBackgroundColor,
         createdAt: user.createdAt,
+        status: user.status,
         // profile: user.profile, // Uncomment if you return profile URL
       },
     });
