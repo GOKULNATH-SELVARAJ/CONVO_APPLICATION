@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { required } = require("nodemon/lib/config");
 
 const conversationSchema = new mongoose.Schema(
   {
@@ -8,6 +9,10 @@ const conversationSchema = new mongoose.Schema(
     },
     lastMessageAt: {
       type: Date,
+      default: null,
+    },
+    lastMessageSentBy: {
+      type: String,
       default: null,
     },
     lastMessage: [
@@ -21,6 +26,5 @@ const conversationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 module.exports = mongoose.model("Conversation", conversationSchema);
