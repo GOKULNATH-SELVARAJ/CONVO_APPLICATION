@@ -3,12 +3,14 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const multer = require("multer");
 const path = require("path");
-const generateToken = require("../utils/generateToken");
+const auth = require("../middleware/authMiddleware");
+const jwt = require("jsonwebtoken");
+
 const {
   getAlphabetColor,
   generateAlphabetColors,
 } = require("../utils/colorGeneration"); // adjust path as needed
-
+const { generateAccessToken, generateRefreshToken } = require("../utils/token");
 //Storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -52,12 +54,12 @@ router.post("/register", async (req, res) => {
     const alphabetColors = generateAlphabetColors();
 
     const colorOptionsForInitial = alphabetColors.filter(
-      (color) => color.letter === initial
+      (color) => color.letter === initial,
     );
 
     // Shuffle the color options to reduce collision probability
     const shuffledColors = colorOptionsForInitial.sort(
-      () => 0.5 - Math.random()
+      () => 0.5 - Math.random(),
     );
 
     let selectedColor = null;
@@ -110,23 +112,35 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
       });
     }
+
     const validPassword = await bcrypt.compare(
       req.body.password,
-      user.password
+      user.password,
     );
+
     if (!validPassword) {
       return res.status(400).send("Invalid Password");
     }
-    // const { accessToken, refreshToken } = await generateToken(user);
-    // res.status(200).json(user)
+
+    // 🔐 CREATE JWT HERE
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    // Optional: store refresh token in DB
+    user.refreshToken = refreshToken;
+    await user.save();
+
     res.status(200).json({
       success: true,
       message: "Logged in successfully",
+      accessToken,
+      refreshToken,
       data: {
         userId: user._id,
         username: user.username,
@@ -135,12 +149,40 @@ router.post("/login", async (req, res) => {
         backgroundColor: user.profileBackgroundColor,
         createdAt: user.createdAt,
         status: user.status,
-        // profile: user.profile, // Uncomment if you return profile URL
       },
     });
   } catch (error) {
     console.log(error);
+    res.status(500).json({ message: "Server error" });
   }
 });
+
+router.post("/refresh", async (req, res) => {
+  const { refreshToken } = req.body;
+
+  const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+  const newAccessToken = generateAccessToken(decoded.userId);
+
+  res.json({ accessToken: newAccessToken });
+});
+
+router.post("/logout", auth, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    await User.findByIdAndUpdate(userId, {
+      $unset: { refreshToken: 1 },
+    });
+
+    res.json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Logout failed" });
+  }
+});
+
 
 module.exports = router;

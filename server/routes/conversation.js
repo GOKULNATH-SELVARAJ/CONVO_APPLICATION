@@ -1,8 +1,9 @@
 const router = require("express").Router();
+const auth = require("../middleware/authMiddleware");
 const Conversation = require("../models/Conversation");
 
 //New conversation
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   const { senderId, receiverId } = req.body;
 
   try {
@@ -60,13 +61,15 @@ router.post("/", async (req, res) => {
 
 //Get conversation
 
-router.get("/:userId", async (req, res) => {
+router.get("/:userId", auth, async (req, res) => {
   try {
     const conversation = await Conversation.find({
       members: { $in: [req.params.userId] },
     })
       .sort({ lastMessageAt: -1 })
       .limit();
+    console.log("conversation", conversation);
+
     res.status(200).json(conversation);
   } catch (error) {
     res.status(500).json(error);

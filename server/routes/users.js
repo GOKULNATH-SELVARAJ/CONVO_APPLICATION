@@ -2,9 +2,10 @@ const router = require("express").Router();
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const admin = require("../notification/firebase");
+const auth = require("../middleware/authMiddleware");
 
 //Update user
-router.put("/:id", async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   if (req.body.userId === req.params.id || req.body.isAdmin) {
     if (req.body.password) {
       try {
@@ -31,7 +32,7 @@ router.put("/:id", async (req, res) => {
 });
 
 //Delete user
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   if (req.body.userId === req.params.id || req.body.isAdmin) {
     try {
       const user = await User.findByIdAndDelete(req.params.id);
@@ -48,7 +49,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 //Get user
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
   const userId = req.query.userId;
   const username = req.query.username;
   try {
@@ -63,10 +64,12 @@ router.get("/", async (req, res) => {
 });
 
 //Get all users
-router.get("/all", async (req, res) => {
+router.get("/all", auth, async (req, res) => {
   try {
     const users = await User.find({ _id: { $ne: req.query.userId } }) // $ne = not equal
       .select("-password");
+    console.log("users", users);
+
     const formattedUsers = users.map((user) => ({
       userId: user._id,
       username: user.username,
@@ -92,7 +95,7 @@ router.get("/all", async (req, res) => {
 });
 
 // Add FCM Token
-router.post("/add-token", async (req, res) => {
+router.post("/add-token", auth, async (req, res) => {
   try {
     const { userId, fcmToken } = req.body;
     console.log("add-token");
@@ -116,7 +119,7 @@ router.post("/add-token", async (req, res) => {
   }
 });
 
-router.post("/send-notification", async (req, res) => {
+router.post("/send-notification", auth, async (req, res) => {
   try {
     const { userId, title, body, data } = req.body;
 
@@ -147,4 +150,5 @@ router.post("/send-notification", async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 module.exports = router;

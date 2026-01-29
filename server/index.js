@@ -89,7 +89,7 @@ io.on("connection", (socket) => {
     const logggg = await User.findByIdAndUpdate(
       userId,
       { status: "online" },
-      { new: true }
+      { new: true },
     );
     console.log("logggg", logggg);
 
@@ -100,7 +100,7 @@ io.on("connection", (socket) => {
     const logggg222 = await User.findByIdAndUpdate(
       userId,
       { status: "offline" },
-      { new: true }
+      { new: true },
     );
     console.log("logggg", logggg222);
     io.emit("userStatus", { userId, status: "offline" });
@@ -164,7 +164,7 @@ io.on("connection", (socket) => {
       // 6️⃣ Update lastMessage entry (WhatsApp logic)
       const updatedLastMessage = conversation.members.map((memberId) => {
         const prev = conversation.lastMessage?.find(
-          (m) => m.id.toString() === memberId.toString()
+          (m) => m.id.toString() === memberId.toString(),
         );
 
         if (memberId.toString() === sender.toString()) {
@@ -194,7 +194,7 @@ io.on("connection", (socket) => {
           lastMessageAt: new Date(),
           updatedAt: new Date(),
         },
-        { new: true }
+        { new: true },
       );
       const updatedConversations = await Conversation.find({
         members: sender,
@@ -205,7 +205,7 @@ io.on("connection", (socket) => {
       if (updatedConversations) {
         io.to(receiverSocketId).emit(
           "conversation updated",
-          updatedConversations
+          updatedConversations,
         );
         io.to(sender).emit("conversation updated", updatedConversations);
       }
@@ -220,7 +220,7 @@ io.on("connection", (socket) => {
     try {
       await Message.updateMany(
         { conversationId, seen: false },
-        { $set: { seen: true } }
+        { $set: { seen: true } },
       );
 
       const conversation = await Conversation.findById(conversationId);
@@ -229,7 +229,7 @@ io.on("connection", (socket) => {
       const updatedLastMessage = conversation.lastMessage.map((entry) =>
         entry.id.toString() === userId.toString()
           ? { ...entry, unseenMessagesCount: 0, seen: true }
-          : entry
+          : entry,
       );
 
       await Conversation.updateOne(
@@ -239,7 +239,7 @@ io.on("connection", (socket) => {
             updatedAt: new Date(),
             lastMessage: updatedLastMessage,
           },
-        }
+        },
       );
 
       // Notify sender that receiver has read the messages 👇

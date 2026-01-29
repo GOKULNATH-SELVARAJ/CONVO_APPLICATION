@@ -1,9 +1,11 @@
 const router = require("express").Router();
 const Message = require("../models/message");
 const Conversation = require("../models/Conversation");
+const auth = require("../middleware/authMiddleware");
+
 
 // Add Message
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   const { conversationId, sender, text } = req.body;
   console.log("✅ /message API called with:", { conversationId, sender, text });
 
@@ -67,7 +69,7 @@ router.post("/", async (req, res) => {
 });
 
 // Mark messages as seen (per user)
-router.post("/seen", async (req, res) => {
+router.post("/seen", auth, async (req, res) => {
   const { conversationId, userId } = req.body;
 
   try {
@@ -98,7 +100,7 @@ router.post("/seen", async (req, res) => {
 });
 
 // Get all messages in a conversation
-router.get("/:conversationId", async (req, res) => {
+router.get("/:conversationId", auth, async (req, res) => {
   try {
     const messages = await Message.find({
       conversationId: req.params.conversationId,
@@ -110,7 +112,7 @@ router.get("/:conversationId", async (req, res) => {
 });
 
 // Get last message in a conversation
-router.get("/last/:conversationId", async (req, res) => {
+router.get("/last/:conversationId", auth, async (req, res) => {
   try {
     const lastMessage = await Message.findOne({
       conversationId: req.params.conversationId,
