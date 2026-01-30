@@ -124,6 +124,8 @@ router.post("/send-notification", auth, async (req, res) => {
     const { userId, title, body, data } = req.body;
 
     const user = await User.findById(userId);
+    console.log("user,user", user);
+
     if (!user?.fcmToken) {
       return res
         .status(404)
@@ -138,6 +140,7 @@ router.post("/send-notification", auth, async (req, res) => {
       },
       data: data || {}, // optional key/value pairs
     };
+    console.log("message", message);
 
     await admin.messaging().send(message);
 
@@ -147,7 +150,15 @@ router.post("/send-notification", auth, async (req, res) => {
     });
   } catch (error) {
     console.error("Error sending notification:", error);
+    if (
+      error.errorInfo?.code === "messaging/registration-token-not-registered"
+    ) {
+      await User.findByIdAndUpdate(req.body.userId, { fcmToken: null });
+      console.log("❌ Invalid token removed from DB!");
+    }
+
     return res.status(500).json({ success: false, message: "Server error" });
+    // return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

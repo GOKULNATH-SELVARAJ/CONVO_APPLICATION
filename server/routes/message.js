@@ -53,14 +53,12 @@ router.post("/", auth, async (req, res) => {
         lastMessageAt: new Date(),
         lastMessage: updatedLastMessage,
         updatedAt: new Date(),
+        lastMessageSentBy: sender,
       },
       { new: true }
     );
 
-    // console.log(
-    //   "✅ Updated conversation.lastMessage:",
-    //   updatedConversation.lastMessage
-    // );
+    console.log("✅ Updated conversation.lastMessage:", updatedConversation);
     res.status(200).json(savedMessage);
   } catch (error) {
     console.error("❌ Error in message post:", error);
