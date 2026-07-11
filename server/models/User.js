@@ -32,6 +32,10 @@ const userSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    refreshToken: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["online", "offline"],

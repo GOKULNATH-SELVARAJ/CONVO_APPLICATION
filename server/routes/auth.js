@@ -1,16 +1,16 @@
 const router = require("express").Router();
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const multer = require("multer");
 const path = require("path");
 const auth = require("../middleware/authMiddleware");
-const jwt = require("jsonwebtoken");
-
 const {
   getAlphabetColor,
   generateAlphabetColors,
 } = require("../utils/colorGeneration"); // adjust path as needed
 const { generateAccessToken, generateRefreshToken } = require("../utils/token");
+
 //Storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -125,14 +125,16 @@ router.post("/login", async (req, res) => {
     );
 
     if (!validPassword) {
-      return res.status(400).send("Invalid Password");
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Password",
+      });
     }
 
-    // 🔐 CREATE JWT HERE
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Optional: store refresh token in DB
+    // Persist the refresh token so it can be revoked on logout
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -157,16 +159,30 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// Refresh -> issue a new access token from a valid refresh token
 router.post("/refresh", async (req, res) => {
-  const { refreshToken } = req.body;
+  try {
+    const { refreshToken } = req.body;
 
-  const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    if (!refreshToken) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Refresh token is required" });
+    }
 
-  const newAccessToken = generateAccessToken(decoded.userId);
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
-  res.json({ accessToken: newAccessToken });
+    const newAccessToken = generateAccessToken(decoded.userId);
+
+    res.json({ accessToken: newAccessToken });
+  } catch (err) {
+    res
+      .status(403)
+      .json({ success: false, message: "Invalid or expired refresh token" });
+  }
 });
 
+// Logout -> revoke the stored refresh token
 router.post("/logout", auth, async (req, res) => {
   try {
     const userId = req.userId;
@@ -183,6 +199,5 @@ router.post("/logout", auth, async (req, res) => {
     res.status(500).json({ message: "Logout failed" });
   }
 });
-
 
 module.exports = router;
