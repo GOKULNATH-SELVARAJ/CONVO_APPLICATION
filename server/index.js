@@ -238,6 +238,17 @@ io.on("connection", (socket) => {
 
     io.to(receiverId).emit("message received", savedMessage);
 
+    // The receiver has this chat open, so the message was stored as already
+    // read. Tell the sender now instead of relying on the receiver's app to
+    // follow up with markAsSeen (older app builds skip it for messages in a
+    // row), otherwise the sender's ticks stay grey while the DB says seen.
+    if (isReceiverInsideChat) {
+      io.to(userId).emit("messages seen", {
+        conversationId,
+        seenBy: String(receiverId),
+      });
+    }
+
     // Counted from the messages themselves so a message already counted by
     // POST /api/message isn't counted twice
     const receiverUnseenCount = await Message.countDocuments({
