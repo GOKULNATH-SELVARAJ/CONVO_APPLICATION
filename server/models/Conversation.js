@@ -10,6 +10,10 @@ const conversationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    lastMessageSentBy: {
+      type: String,
+      default: null,
+    },
     lastMessage: [
       {
         id: String,
@@ -21,6 +25,5 @@ const conversationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 module.exports = mongoose.model("Conversation", conversationSchema);

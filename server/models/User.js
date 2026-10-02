@@ -9,11 +9,15 @@ const userSchema = mongoose.Schema(
       max: 15,
       unique: true,
     },
+    // Stored lowercased; look up with EMAIL_COLLATION so accounts created
+    // before this change (with mixed-case emails) still match
     email: {
       type: String,
       required: true,
       max: 50,
       unique: true,
+      lowercase: true,
+      trim: true,
     },
     password: {
       type: String,
@@ -28,7 +32,17 @@ const userSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    // Legacy single push token; read alongside fcmTokens and migrated on the next add-token
     fcmToken: {
+      type: String,
+      default: null,
+    },
+    // One FCM token per device
+    fcmTokens: {
+      type: [String],
+      default: [],
+    },
+    refreshToken: {
       type: String,
       default: null,
     },
@@ -41,4 +55,8 @@ const userSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+// Case-insensitive comparison for email lookups
+const EMAIL_COLLATION = { locale: "en", strength: 2 };
+
 module.exports = mongoose.model("User", userSchema);
+module.exports.EMAIL_COLLATION = EMAIL_COLLATION;

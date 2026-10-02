@@ -1,30 +1,33 @@
 const router = require("express").Router();
 const Message = require("../models/message");
 const Conversation = require("../models/Conversation");
+const auth = require("../middleware/authMiddleware");
+const { findMemberConversation } = require("../utils/conversationAccess");
 
-// Add Message
-router.post("/", async (req, res) => {
-  const { conversationId, sender, text } = req.body;
-  console.log("✅ /message API called with:", { conversationId, sender, text });
 
-  if (!conversationId || !sender || !text) {
+// Add Message (the logged-in user is always the sender)
+router.post("/", auth, async (req, res) => {
+  const { conversationId, text } = req.body;
+  const sender = req.userId;
+
+  if (!conversationId || typeof text !== "string" || !text.trim()) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
-    // Step 1: Save message with seen = false
+    // Step 1: Make sure the sender belongs to the conversation
+    const conversation = await findMemberConversation(conversationId, sender);
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    // Step 2: Save message with seen = false
     const savedMessage = await new Message({
       conversationId,
       sender,
       text,
       seen: false,
     }).save();
-
-    // Step 2: Fetch the conversation
-    const conversation = await Conversation.findById(conversationId);
-    if (!conversation) {
-      return res.status(404).json({ error: "Conversation not found" });
-    }
 
     // Step 3: Recompute unseen message counts per user
     const updatedLastMessage = await Promise.all(
@@ -45,20 +48,13 @@ router.post("/", async (req, res) => {
     );
 
     // Step 4: Update conversation with new message metadata
-    const updatedConversation = await Conversation.findByIdAndUpdate(
-      conversationId,
-      {
-        lastMessageAt: new Date(),
-        lastMessage: updatedLastMessage,
-        updatedAt: new Date(),
-      },
-      { new: true }
-    );
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessageAt: new Date(),
+      lastMessage: updatedLastMessage,
+      updatedAt: new Date(),
+      lastMessageSentBy: sender,
+    });
 
-    // console.log(
-    //   "✅ Updated conversation.lastMessage:",
-    //   updatedConversation.lastMessage
-    // );
     res.status(200).json(savedMessage);
   } catch (error) {
     console.error("❌ Error in message post:", error);
@@ -66,22 +62,30 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Mark messages as seen (per user)
-router.post("/seen", async (req, res) => {
-  const { conversationId, userId } = req.body;
+// Mark messages as seen (for the logged-in user)
+router.post("/seen", auth, async (req, res) => {
+  const { conversationId } = req.body;
+  const userId = req.userId;
 
   try {
-    const conversation = await Conversation.findById(conversationId);
+    const conversation = await findMemberConversation(conversationId, userId);
     if (!conversation) {
       return res.status(404).json({ error: "Conversation not found" });
     }
+
+    // Mark the messages themselves, otherwise the next recount brings the unseen count back
+    await Message.updateMany(
+      { conversationId, sender: { $ne: userId }, seen: false },
+      { $set: { seen: true } },
+    );
 
     // Update unseenMessagesCount for this user to 0
     const updatedLastMessage = (conversation.lastMessage || []).map((entry) => {
       if (entry.id === userId) {
         return {
-          ...entry,
+          ...entry.toObject(),
           unseenMessagesCount: 0,
+          seen: true,
         };
       }
       return entry;
@@ -98,11 +102,19 @@ router.post("/seen", async (req, res) => {
 });
 
 // Get all messages in a conversation
-router.get("/:conversationId", async (req, res) => {
+router.get("/:conversationId", auth, async (req, res) => {
   try {
+    const conversation = await findMemberConversation(
+      req.params.conversationId,
+      req.userId,
+    );
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
     const messages = await Message.find({
       conversationId: req.params.conversationId,
-    });
+    }).sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (error) {
     res.status(500).json(error);
@@ -110,8 +122,16 @@ router.get("/:conversationId", async (req, res) => {
 });
 
 // Get last message in a conversation
-router.get("/last/:conversationId", async (req, res) => {
+router.get("/last/:conversationId", auth, async (req, res) => {
   try {
+    const conversation = await findMemberConversation(
+      req.params.conversationId,
+      req.userId,
+    );
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
     const lastMessage = await Message.findOne({
       conversationId: req.params.conversationId,
     })
