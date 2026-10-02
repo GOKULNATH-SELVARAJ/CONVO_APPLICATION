@@ -155,10 +155,13 @@ router.post("/send-notification", auth, async (req, res) => {
     ) {
       await User.findByIdAndUpdate(req.body.userId, { fcmToken: null });
       console.log("❌ Invalid token removed from DB!");
+      return res.status(200).json({
+        success: true,
+        message: "Invalid FCM token removed. User needs to register again.",
+      });
     }
 
     return res.status(500).json({ success: false, message: "Server error" });
-    // return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

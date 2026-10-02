@@ -14,6 +14,7 @@ const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
 const User = require("./models/User");
 const axios = require("axios");
+const { generateAccessToken } = require("./utils/token");
 
 dotenv.config();
 
@@ -210,6 +211,7 @@ io.on("connection", (socket) => {
 
       if (!isReceiverInsideChat) {
         try {
+          const token = generateAccessToken(sender);
           await axios.post(
             `${process.env.BASE_URL}/api/users/send-notification`,
             {
@@ -222,6 +224,11 @@ io.on("connection", (socket) => {
                 receiverId: receiverId,
                 title: receiverDetails.username,
                 body: text,
+              },
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
               },
             }
           );
