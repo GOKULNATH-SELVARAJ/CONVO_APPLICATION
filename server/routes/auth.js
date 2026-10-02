@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { EMAIL_COLLATION } = require("../models/User");
 const bcrypt = require("bcrypt");
 const auth = require("../middleware/authMiddleware");
 const {
@@ -27,13 +28,14 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // 1. Check if username or email already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }],
-    });
+    // 1. Check if username or email already exists (email ignoring case)
+    const [emailTaken, usernameTaken] = await Promise.all([
+      User.exists({ email }).collation(EMAIL_COLLATION),
+      User.exists({ username }),
+    ]);
 
-    if (existingUser) {
-      const field = existingUser.email === email ? "Email ID" : "Username";
+    if (emailTaken || usernameTaken) {
+      const field = emailTaken ? "Email ID" : "Username";
       return res.status(400).json({
         success: false,
         message: `${field} already exists`,
@@ -113,7 +115,9 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: req.body.email });
+    const user = await User.findOne({ email: req.body.email }).collation(
+      EMAIL_COLLATION,
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -192,14 +196,22 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// Logout -> revoke the stored refresh token
+// Logout -> revoke the stored refresh token, and this device's push token if sent
 router.post("/logout", auth, async (req, res) => {
   try {
     const userId = req.userId;
+    const { fcmToken } = req.body;
 
-    await User.findByIdAndUpdate(userId, {
-      $unset: { refreshToken: 1 },
-    });
+    const update = { $unset: { refreshToken: 1 } };
+    if (isNonEmptyString(fcmToken)) {
+      update.$pull = { fcmTokens: fcmToken };
+    }
+    await User.findByIdAndUpdate(userId, update);
+
+    if (isNonEmptyString(fcmToken)) {
+      // Legacy single-token field
+      await User.updateOne({ _id: userId, fcmToken }, { fcmToken: null });
+    }
 
     res.json({
       success: true,

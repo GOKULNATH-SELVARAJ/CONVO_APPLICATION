@@ -171,17 +171,21 @@ io.on("connection", (socket) => {
     socket.to(String(roomId)).emit("user left chat", { userId, roomId });
   });
 
-  on("send message", async (newMessage) => {
+  // Validates and stores an incoming socket message.
+  // Resolves to { error } or { savedMessage, conversation, receiverId, isReceiverInsideChat }.
+  const saveSocketMessage = async (newMessage) => {
     const { conversationId, text, _id: existingMessageId } = newMessage || {};
-    if (typeof text !== "string" || !text.trim()) return;
+    if (typeof text !== "string" || !text.trim()) {
+      return { error: "Message text is required" };
+    }
 
     const conversation = await findMemberConversation(conversationId, userId);
-    if (!conversation) return;
+    if (!conversation) return { error: "Conversation not found" };
 
     const receiverId = conversation.members.find(
       (memberId) => memberId.toString() !== userId,
     );
-    if (!receiverId) return;
+    if (!receiverId) return { error: "Conversation has no receiver" };
 
     const isReceiverInsideChat = isUserInRoom(receiverId, conversationId);
 
@@ -204,6 +208,33 @@ io.on("connection", (socket) => {
         createdAt: new Date(),
       });
     }
+
+    return { savedMessage, conversation, receiverId, isReceiverInsideChat };
+  };
+
+  // Optional ack as the last argument:
+  // socket.emit("send message", msg, receiverId, ({ success, message, error }) => ...)
+  on("send message", async (newMessage, ...rest) => {
+    const ack = rest.find((arg) => typeof arg === "function");
+
+    let result;
+    try {
+      result = await saveSocketMessage(newMessage);
+    } catch (error) {
+      reply(ack, { success: false, error: "Could not save message" });
+      throw error;
+    }
+
+    if (result.error) {
+      return reply(ack, { success: false, error: result.error });
+    }
+
+    const { savedMessage, conversation, receiverId, isReceiverInsideChat } =
+      result;
+    const conversationId = String(conversation._id);
+
+    // Acknowledge as soon as the message is stored; the fan-out below can't undo that
+    reply(ack, { success: true, message: savedMessage });
 
     io.to(receiverId).emit("message received", savedMessage);
 

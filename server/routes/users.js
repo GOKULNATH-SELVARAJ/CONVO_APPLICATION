@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const { EMAIL_COLLATION } = require("../models/User");
 const Conversation = require("../models/Conversation");
 const bcrypt = require("bcrypt");
 const auth = require("../middleware/authMiddleware");
@@ -10,7 +11,11 @@ const { sendPushNotification } = require("../notification/sendNotification");
 const UPDATABLE_FIELDS = ["username", "email", "password"];
 
 // Never sent to other clients
-const PRIVATE_FIELDS = "-password -updatedAt -refreshToken -fcmToken";
+const PRIVATE_FIELDS =
+  "-password -updatedAt -refreshToken -fcmToken -fcmTokens";
+
+// Push tokens kept per user (oldest dropped first)
+const MAX_DEVICES = 10;
 
 //Update user
 router.put("/:id", auth, async (req, res) => {
@@ -33,6 +38,17 @@ router.put("/:id", auth, async (req, res) => {
   }
 
   try {
+    // The unique index is case-sensitive, so catch "Bob@x.com" vs "bob@x.com" here
+    if (
+      updates.email &&
+      (await User.exists({
+        email: updates.email,
+        _id: { $ne: req.userId },
+      }).collation(EMAIL_COLLATION))
+    ) {
+      return res.status(409).json("Username or email already exists");
+    }
+
     const user = await User.findByIdAndUpdate(req.params.id, {
       $set: updates,
     });
@@ -129,7 +145,31 @@ router.post("/add-token", auth, async (req, res) => {
       return res.status(400).json({ message: "fcmToken is required" });
     }
 
-    await User.findByIdAndUpdate(req.userId, { fcmToken });
+    // A device belongs to one account at a time: if another user logged in
+    // on this device before, stop sending them pushes here
+    await Promise.all([
+      User.updateMany(
+        { _id: { $ne: req.userId }, fcmTokens: fcmToken },
+        { $pull: { fcmTokens: fcmToken } },
+      ),
+      User.updateMany(
+        { _id: { $ne: req.userId }, fcmToken },
+        { fcmToken: null },
+      ),
+    ]);
+
+    const user = await User.findById(req.userId).select("fcmToken fcmTokens");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Move the legacy single token into the list, newest last
+    const otherTokens = [...user.fcmTokens, user.fcmToken].filter(
+      (token) => token && token !== fcmToken,
+    );
+    user.fcmTokens = [...new Set(otherTokens), fcmToken].slice(-MAX_DEVICES);
+    user.fcmToken = null;
+    await user.save();
 
     return res.json({
       success: true,
