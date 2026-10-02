@@ -29,12 +29,19 @@ const generateAlphabetColors = (variantsPerLetter = 10) => {
   return colors;
 };
 
-const getAlphabetColor = (letter) => {
+// First character as an uppercase A-Z letter; anything else (digits, symbols) maps to "A"
+const normalizeLetter = (value) => {
+  const letter = String(value || "").charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(letter) ? letter : "A";
+};
+
+const getAlphabetColor = (value) => {
+  const letter = normalizeLetter(value);
   const colors = generateAlphabetColors();
 
   for (const color of colors) {
     if (
-      color.letter === letter.toUpperCase() &&
+      color.letter === letter &&
       !takenColors.has(color.backgroundColor)
     ) {
       takenColors.add(color.backgroundColor); // mark it as taken
@@ -43,7 +50,7 @@ const getAlphabetColor = (letter) => {
   }
 
   // If all are taken, fallback: append a variant marker (alpha)
-  const fallback = colors.find((c) => c.letter === letter.toUpperCase());
+  const fallback = colors.find((c) => c.letter === letter);
   return {
     ...fallback,
     backgroundColor: `${fallback.backgroundColor}AA`, // fallback color with transparency suffix
@@ -70,4 +77,5 @@ const hslToHex = (h, s, l) => {
 module.exports = {
   generateAlphabetColors,
   getAlphabetColor,
+  normalizeLetter,
 };

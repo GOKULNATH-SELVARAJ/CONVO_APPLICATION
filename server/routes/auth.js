@@ -2,35 +2,30 @@ const router = require("express").Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
-const multer = require("multer");
-const path = require("path");
 const auth = require("../middleware/authMiddleware");
 const {
   getAlphabetColor,
   generateAlphabetColors,
+  normalizeLetter,
 } = require("../utils/colorGeneration"); // adjust path as needed
 const { generateAccessToken, generateRefreshToken } = require("../utils/token");
 
-//Storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    // let datetimestamp = Date.now();
-    const username = req.body.username;
-    cb(null, username + path.extname(file.originalname));
-  },
-});
-
-//Upload
-const upload = multer({ storage: storage });
+const isNonEmptyString = (value) =>
+  typeof value === "string" && value.trim() !== "";
 
 // Register
 
 router.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
+
+    // Strings only, so objects like { "$ne": null } can't reach the query
+    if (![username, email, password].every(isNonEmptyString)) {
+      return res.status(400).json({
+        success: false,
+        message: "Username, email and password are required",
+      });
+    }
 
     // 1. Check if username or email already exists
     const existingUser = await User.findOne({
@@ -50,7 +45,7 @@ router.post("/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 3. Generate color and ensure uniqueness
-    const initial = username?.charAt(0)?.toUpperCase() || "A";
+    const initial = normalizeLetter(username);
     const alphabetColors = generateAlphabetColors();
 
     const colorOptionsForInitial = alphabetColors.filter(
@@ -111,6 +106,13 @@ router.post("/register", async (req, res) => {
 // Login
 router.post("/login", async (req, res) => {
   try {
+    if (!isNonEmptyString(req.body.email) || !isNonEmptyString(req.body.password)) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
     const user = await User.findOne({ email: req.body.email });
 
     if (!user) {
@@ -171,6 +173,14 @@ router.post("/refresh", async (req, res) => {
     }
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    // Must still be the stored token, so logout actually revokes it
+    const user = await User.findById(decoded.userId).select("refreshToken");
+    if (!user || user.refreshToken !== refreshToken) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Invalid or expired refresh token" });
+    }
 
     const newAccessToken = generateAccessToken(decoded.userId);
 

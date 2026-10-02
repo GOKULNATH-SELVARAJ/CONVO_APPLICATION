@@ -1,63 +1,90 @@
 const router = require("express").Router();
+const mongoose = require("mongoose");
 const User = require("../models/User");
+const Conversation = require("../models/Conversation");
 const bcrypt = require("bcrypt");
-const admin = require("../notification/firebase");
 const auth = require("../middleware/authMiddleware");
+const { sendPushNotification } = require("../notification/sendNotification");
+
+// Fields a user may change on their own account
+const UPDATABLE_FIELDS = ["username", "email", "password"];
+
+// Never sent to other clients
+const PRIVATE_FIELDS = "-password -updatedAt -refreshToken -fcmToken";
 
 //Update user
 router.put("/:id", auth, async (req, res) => {
-  if (req.body.userId === req.params.id || req.body.isAdmin) {
-    if (req.body.password) {
-      try {
-        const salt = await bcrypt.genSalt(10);
-        req.body.password = await bcrypt.hash(req.body.password, salt);
-      } catch (error) {
-        return res.status(500).json(error);
-      }
-    }
+  if (req.params.id !== req.userId) {
+    return res.status(403).json("You can't change anything");
+  }
+
+  const updates = {};
+  for (const field of UPDATABLE_FIELDS) {
+    if (typeof req.body[field] === "string") updates[field] = req.body[field];
+  }
+
+  if (updates.password) {
     try {
-      const user = await User.findByIdAndUpdate(req.params.id, {
-        $set: req.body,
-      });
-      if (!user) {
-        return res.status(404).json("User not found");
-      }
-      res.status(200).json("Updated Successfully");
+      const salt = await bcrypt.genSalt(10);
+      updates.password = await bcrypt.hash(updates.password, salt);
     } catch (error) {
       return res.status(500).json(error);
     }
-  } else {
-    return res.status(404).json("You can't change anything");
+  }
+
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, {
+      $set: updates,
+    });
+    if (!user) {
+      return res.status(404).json("User not found");
+    }
+    res.status(200).json("Updated Successfully");
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json("Username or email already exists");
+    }
+    return res.status(500).json(error);
   }
 });
 
 //Delete user
 router.delete("/:id", auth, async (req, res) => {
-  if (req.body.userId === req.params.id || req.body.isAdmin) {
-    try {
-      const user = await User.findByIdAndDelete(req.params.id);
-      if (!user) {
-        return res.status(404).json("The user is not available");
-      }
-      res.status(200).json("User deleted successfully");
-    } catch (error) {
-      return res.status(200).json(error);
-    }
-  } else {
+  if (req.params.id !== req.userId) {
     return res.status(403).json("You are not allowed to delete this account");
+  }
+
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) {
+      return res.status(404).json("The user is not available");
+    }
+    res.status(200).json("User deleted successfully");
+  } catch (error) {
+    return res.status(500).json(error);
   }
 });
 
 //Get user
 router.get("/", auth, async (req, res) => {
-  const userId = req.query.userId;
-  const username = req.query.username;
+  const { userId, username } = req.query;
+
+  if (userId ? !mongoose.isValidObjectId(userId) : typeof username !== "string") {
+    return res.status(400).json("A valid userId or username is required");
+  }
+
   try {
-    const user = userId
-      ? await User.findById(userId)
-      : await User.findOne({ username: username });
-    const { password, updatedAt, ...other } = user._doc;
-    res.status(200).json(other);
+    const user = await (userId
+      ? User.findById(userId)
+      : User.findOne({ username })
+    )
+      .select(PRIVATE_FIELDS)
+      .lean();
+
+    if (!user) {
+      return res.status(404).json("User not found");
+    }
+    res.status(200).json(user);
   } catch (err) {
     res.status(500).json(err);
   }
@@ -66,9 +93,8 @@ router.get("/", auth, async (req, res) => {
 //Get all users
 router.get("/all", auth, async (req, res) => {
   try {
-    const users = await User.find({ _id: { $ne: req.query.userId } }) // $ne = not equal
-      .select("-password");
-    console.log("users", users);
+    const users = await User.find({ _id: { $ne: req.userId } }) // $ne = not equal
+      .select(PRIVATE_FIELDS);
 
     const formattedUsers = users.map((user) => ({
       userId: user._id,
@@ -94,19 +120,16 @@ router.get("/all", auth, async (req, res) => {
   }
 });
 
-// Add FCM Token
+// Add FCM Token (always for the logged-in user)
 router.post("/add-token", auth, async (req, res) => {
   try {
-    const { userId, fcmToken } = req.body;
-    console.log("add-token");
+    const { fcmToken } = req.body;
 
-    if (!userId || !fcmToken) {
-      return res
-        .status(400)
-        .json({ message: "userId and fcmToken are required" });
+    if (typeof fcmToken !== "string" || !fcmToken) {
+      return res.status(400).json({ message: "fcmToken is required" });
     }
 
-    await User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+    await User.findByIdAndUpdate(req.userId, { fcmToken });
 
     return res.json({
       success: true,
@@ -119,30 +142,40 @@ router.post("/add-token", auth, async (req, res) => {
   }
 });
 
+// Only allowed towards users the caller shares a conversation with
 router.post("/send-notification", auth, async (req, res) => {
   try {
-    const { userId, title, body, data } = req.body;
+    const { userId, data } = req.body;
 
-    const user = await User.findById(userId);
-    console.log("user,user", user);
+    if (!mongoose.isValidObjectId(userId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "A valid userId is required" });
+    }
 
-    if (!user?.fcmToken) {
+    const sharesConversation = await Conversation.exists({
+      members: { $all: [req.userId, String(userId)] },
+    });
+    if (!sharesConversation) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only notify users you have a conversation with",
+      });
+    }
+
+    const result = await sendPushNotification(userId, data || {});
+
+    if (result.reason === "no-token") {
       return res
         .status(404)
         .json({ success: false, message: "FCM token not found" });
     }
-    console.log("user.fcmToken", user.fcmToken);
-    const message = {
-      token: user.fcmToken,
-      // notification: { title, body },
-      android: {
-        priority: "high",
-      },
-      data: data || {}, // optional key/value pairs
-    };
-    console.log("message", message);
-
-    await admin.messaging().send(message);
+    if (result.reason === "token-removed") {
+      return res.status(200).json({
+        success: true,
+        message: "Invalid FCM token removed. User needs to register again.",
+      });
+    }
 
     return res.json({
       success: true,
@@ -150,17 +183,6 @@ router.post("/send-notification", auth, async (req, res) => {
     });
   } catch (error) {
     console.error("Error sending notification:", error);
-    if (
-      error.errorInfo?.code === "messaging/registration-token-not-registered"
-    ) {
-      await User.findByIdAndUpdate(req.body.userId, { fcmToken: null });
-      console.log("❌ Invalid token removed from DB!");
-      return res.status(200).json({
-        success: true,
-        message: "Invalid FCM token removed. User needs to register again.",
-      });
-    }
-
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });

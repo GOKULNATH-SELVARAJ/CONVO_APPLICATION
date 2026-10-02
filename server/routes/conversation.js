@@ -1,16 +1,29 @@
 const router = require("express").Router();
+const mongoose = require("mongoose");
 const auth = require("../middleware/authMiddleware");
 const Conversation = require("../models/Conversation");
+const User = require("../models/User");
 
-//New conversation
+//New conversation (the logged-in user is always the sender)
 router.post("/", auth, async (req, res) => {
-  const { senderId, receiverId } = req.body;
+  const senderId = req.userId;
+  const receiverId = req.body.receiverId?.toString();
 
   try {
     if (senderId === receiverId) {
       return res.status(400).json({
         success: false,
         message: "Cannot create a conversation with yourself.",
+      });
+    }
+
+    if (
+      !mongoose.isValidObjectId(receiverId) ||
+      !(await User.exists({ _id: receiverId }))
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "Receiver not found.",
       });
     }
 
@@ -62,13 +75,14 @@ router.post("/", auth, async (req, res) => {
 //Get conversation
 
 router.get("/:userId", auth, async (req, res) => {
+  if (req.params.userId !== req.userId) {
+    return res.status(403).json("You can only view your own conversations");
+  }
+
   try {
     const conversation = await Conversation.find({
       members: { $in: [req.params.userId] },
-    })
-      .sort({ lastMessageAt: -1 })
-      .limit();
-    console.log("conversation", conversation);
+    }).sort({ lastMessageAt: -1 });
 
     res.status(200).json(conversation);
   } catch (error) {

@@ -1,10 +1,16 @@
 // server.js or index.js
+const dotenv = require("dotenv");
+
+// Must run before requiring anything that reads process.env at load time
+// (e.g. notification/firebase.js via routes/users.js)
+dotenv.config();
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const dotenv = require("dotenv");
 const http = require("http");
 const socketIO = require("socket.io");
+const jwt = require("jsonwebtoken");
 
 const Message = require("./models/message");
 const Conversation = require("./models/Conversation");
@@ -13,10 +19,8 @@ const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
 const User = require("./models/User");
-const axios = require("axios");
-const { generateAccessToken } = require("./utils/token");
-
-dotenv.config();
+const { findMemberConversation } = require("./utils/conversationAccess");
+const { sendPushNotification } = require("./notification/sendNotification");
 
 const app = express();
 const server = http.createServer(app);
@@ -49,397 +53,300 @@ server.listen(PORT, () => {
 // ----------------------
 // 🔌 Socket.IO Events
 // ----------------------
-const onlineUsers = new Map(); // userId -> socketId
+
+// Every socket joins a private room named after its userId, so that room
+// holds all of the user's connected sockets (one per device / tab).
+const getUserSocketIds = (userId) => io.sockets.adapter.rooms.get(String(userId));
+
+const isUserInRoom = (userId, roomId) => {
+  const userSocketIds = getUserSocketIds(userId);
+  const clientsInRoom = io.sockets.adapter.rooms.get(String(roomId));
+  if (!userSocketIds || !clientsInRoom) return false;
+
+  for (const socketId of userSocketIds) {
+    if (clientsInRoom.has(socketId)) return true;
+  }
+  return false;
+};
+
+const setUserStatus = async (userId, status) => {
+  await User.findByIdAndUpdate(userId, { status });
+  io.emit("userStatus", { userId, status });
+};
+
+const getConversationsFor = (userId) =>
+  Conversation.find({ members: userId }).sort({ lastMessageAt: -1 });
+
+// Authenticate the handshake with the same access token used for the REST API.
+// Client: io(URL, { auth: { token: accessToken } })
+io.use((socket, next) => {
+  const rawToken =
+    socket.handshake.auth?.token || socket.handshake.headers?.authorization;
+  const token =
+    typeof rawToken === "string" ? rawToken.replace(/^Bearer\s+/i, "") : null;
+
+  if (!token) return next(new Error("Unauthorized"));
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId.toString();
+    next();
+  } catch (err) {
+    next(new Error("Unauthorized"));
+  }
+});
 
 io.on("connection", (socket) => {
-  console.log("🟢 New socket connected:", socket.id);
+  // Identity comes from the verified token; userIds sent in payloads are ignored
+  const userId = socket.userId;
 
-  socket.on("setup", (user) => {
-    const userId = user?.userId?.toString();
-    onlineUsers.set(userId, socket.id); // STORE SOCKET ID
-    socket.join(userId); // Optional: join user's private room
+  socket.join(userId);
+  console.log("🟢 User connected:", userId, socket.id);
+
+  // Registers a handler whose errors (bad payloads, DB failures) are logged
+  // instead of crashing the whole process
+  const on = (event, handler) => {
+    socket.on(event, async (...args) => {
+      try {
+        await handler(...args);
+      } catch (error) {
+        console.error(`❌ Error in "${event}":`, error);
+      }
+    });
+  };
+
+  const reply = (callback, value) => {
+    if (typeof callback === "function") callback(value);
+  };
+
+  setUserStatus(userId, "online").catch((error) =>
+    console.error("❌ Failed to set user online:", error),
+  );
+
+  // Kept for client compatibility; the user is already identified by the token
+  on("setup", () => {
     socket.emit("connected");
-    console.log("🟢 User connected:", userId, socket.id);
-  });
-  socket.on("check user in room", ({ userId, roomId }, callback) => {
-    const clientsInRoom = io.sockets.adapter.rooms.get(roomId);
-    const userSocketId = onlineUsers.get(userId.toString());
-    console.log("check user in room");
-
-    const isUserInRoom = !!(
-      clientsInRoom &&
-      userSocketId &&
-      clientsInRoom.has(userSocketId)
-    );
-    console.log("isUserInRoom", isUserInRoom);
-
-    callback(isUserInRoom);
   });
 
-  socket.on("join chat", (roomId) => {
-    socket.join(roomId);
-    console.log(`🔗 Joined room: ${roomId}`);
-    console.log("JOIN REQUEST RECEIVED:", roomId, typeof roomId);
-    // socket.join(roomId);
-    console.log("ROOMS FOR THIS SOCKET:", socket.rooms);
+  on("check user in room", async (payload, callback) => {
+    const { userId: otherUserId, roomId } = payload || {};
+
+    const conversation = await findMemberConversation(roomId, userId);
+    const isOtherUserInRoom =
+      !!conversation && !!otherUserId && isUserInRoom(otherUserId, roomId);
+
+    reply(callback, isOtherUserInRoom);
   });
 
-  socket.on("userOnline", async (userId) => {
-    await User.findByIdAndUpdate(userId, { status: "online" }, { new: true });
+  on("join chat", async (roomId) => {
+    const conversation = await findMemberConversation(roomId, userId);
+    if (!conversation) return;
 
-    io.emit("userStatus", { userId, status: "online" });
+    socket.join(String(roomId));
+    console.log(`🔗 ${userId} joined room: ${roomId}`);
   });
 
-  socket.on("userOffline", async (userId) => {
-    await User.findByIdAndUpdate(userId, { status: "offline" }, { new: true });
+  on("userOnline", () => setUserStatus(userId, "online"));
 
-    io.emit("userStatus", { userId, status: "offline" });
+  on("userOffline", () => setUserStatus(userId, "offline"));
+
+  on("typing", (payload) => {
+    const { receiverId } = payload || {};
+    if (receiverId) io.to(String(receiverId)).emit("typing", userId);
   });
 
-  socket.on("typing", ({ userId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-    console.log("receiverSocketId in typing", receiverSocketId);
-
-    io.to(receiverSocketId).emit("typing", userId);
+  on("stopTyping", (payload) => {
+    const { receiverId } = payload || {};
+    if (receiverId) io.to(String(receiverId)).emit("stopTyping", userId);
   });
 
-  socket.on("stopTyping", ({ userId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-    io.to(receiverSocketId).emit("stopTyping", userId);
-  });
+  on("leave chat", (payload) => {
+    const { roomId } = payload || {};
+    if (!roomId) return;
 
-  socket.on("leave chat", ({ roomId, userId }) => {
-    socket.leave(roomId);
+    socket.leave(String(roomId));
     console.log(`🚪 User ${userId} left room ${roomId}`);
 
     // Notify others in the same room
-    socket.to(roomId).emit("user left chat", { userId, roomId });
+    socket.to(String(roomId)).emit("user left chat", { userId, roomId });
   });
 
-  socket.on("send message", async (newMessage, receiverId) => {
-    try {
-      const { conversationId, sender, text } = newMessage;
+  on("send message", async (newMessage) => {
+    const { conversationId, text, _id: existingMessageId } = newMessage || {};
+    if (typeof text !== "string" || !text.trim()) return;
 
-      // 1️⃣ Find receiver's socket
-      const receiverSocketId = onlineUsers.get(receiverId);
+    const conversation = await findMemberConversation(conversationId, userId);
+    if (!conversation) return;
 
-      // 2️⃣ Check if receiver is inside the chat room
-      const clientsInRoom = io.sockets.adapter.rooms.get(conversationId);
-      const isReceiverInsideChat =
-        receiverSocketId &&
-        clientsInRoom &&
-        clientsInRoom.has(receiverSocketId);
+    const receiverId = conversation.members.find(
+      (memberId) => memberId.toString() !== userId,
+    );
+    if (!receiverId) return;
 
-      // 3️⃣ Add seen flag based on presence **inside room**
-      const messageWithSeenFlag = {
-        ...newMessage,
-        seen: isReceiverInsideChat,
-      };
+    const isReceiverInsideChat = isUserInRoom(receiverId, conversationId);
 
-      const savedMessage = await Message.create({
+    // Clients that already saved the message via POST /api/message pass the
+    // saved document here; reuse it instead of storing a duplicate
+    let savedMessage = mongoose.isValidObjectId(existingMessageId)
+      ? await Message.findOneAndUpdate(
+          { _id: existingMessageId, conversationId, sender: userId },
+          { seen: isReceiverInsideChat },
+          { new: true },
+        )
+      : null;
+
+    if (!savedMessage) {
+      savedMessage = await Message.create({
         conversationId,
-        sender,
+        sender: userId,
         text,
         seen: isReceiverInsideChat,
         createdAt: new Date(),
       });
+    }
 
-      // 4️⃣ Send message to receiver if online
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit("message received", savedMessage); // ⬅️ use savedMessage
+    io.to(receiverId).emit("message received", savedMessage);
+
+    // Counted from the messages themselves so a message already counted by
+    // POST /api/message isn't counted twice
+    const receiverUnseenCount = await Message.countDocuments({
+      conversationId,
+      sender: { $ne: receiverId },
+      seen: false,
+    });
+
+    const updatedLastMessage = conversation.members.map((memberId) => ({
+      id: memberId,
+      lastMessage: savedMessage.text,
+      seen: isReceiverInsideChat,
+      unseenMessagesCount:
+        memberId.toString() === userId ? 0 : receiverUnseenCount,
+    }));
+
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessage: updatedLastMessage,
+      lastMessageAt: new Date(),
+      updatedAt: new Date(),
+      lastMessageSentBy: userId,
+    });
+
+    const [senderConversations, receiverConversations] = await Promise.all([
+      getConversationsFor(userId),
+      getConversationsFor(receiverId),
+    ]);
+    io.to(receiverId).emit("conversation updated", receiverConversations);
+    io.to(userId).emit("conversation updated", senderConversations);
+
+    if (!isReceiverInsideChat) {
+      try {
+        const sender = await User.findById(userId).select("username").lean();
+        const title = sender?.username || "New message";
+
+        await sendPushNotification(receiverId, {
+          chatId: conversationId,
+          senderId: userId,
+          receiverId,
+          title,
+          body: savedMessage.text,
+        });
+      } catch (notifyErr) {
+        console.log("❌ Failed to send notification:", notifyErr.message);
       }
+    }
+  });
 
-      const receiverDetails = await User.findById(sender);
-      const conversation = await Conversation.findById(conversationId);
-      if (!conversation) return;
-      const updatedLastMessage = conversation.members.map((memberId) => {
-        const prev = conversation.lastMessage?.find(
-          (m) => m.id.toString() === memberId.toString(),
-        );
+  on("markAsSeen", async (payload) => {
+    const { conversationId } = payload || {};
 
-        if (memberId.toString() === sender.toString()) {
-          return {
-            id: memberId,
-            lastMessage: text,
-            unseenMessagesCount: 0,
-            seen: isReceiverInsideChat,
-          };
-        }
+    const conversation = await findMemberConversation(conversationId, userId);
+    if (!conversation) return;
+
+    const friendId = conversation.members.find(
+      (memberId) => memberId.toString() !== userId,
+    );
+
+    // Only messages sent TO this user become seen, not the ones they sent
+    await Message.updateMany(
+      { conversationId, sender: { $ne: userId }, seen: false },
+      { $set: { seen: true } },
+    );
+
+    const lastMsgDoc = await Message.findOne({ conversationId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const updatedLastMessage = await Promise.all(
+      conversation.members.map(async (memberId) => {
+        // how many messages this member has not seen (sent by the OTHER user)
+        const unseenCount = await Message.countDocuments({
+          conversationId,
+          sender: { $ne: memberId },
+          seen: false,
+        });
 
         return {
           id: memberId,
-          lastMessage: text,
-          seen: isReceiverInsideChat,
-          unseenMessagesCount: isReceiverInsideChat
-            ? 0
-            : (prev?.unseenMessagesCount || 0) + 1,
+          lastMessage: lastMsgDoc ? lastMsgDoc.text : "",
+          unseenMessagesCount: unseenCount,
+          seen: unseenCount === 0,
         };
-      });
-
-      // 7️⃣ Store the updated conversation
-      await Conversation.findByIdAndUpdate(
-        conversationId,
-        {
-          lastMessage: updatedLastMessage,
-          lastMessageAt: new Date(),
-          updatedAt: new Date(),
-          lastMessageSentBy: sender,
-        },
-        { new: true },
-      );
-      const updatedSenderConversations = await Conversation.find({
-        members: sender,
-      })
-        .sort({ lastMessageAt: -1 })
-        .limit();
-      const updatedRecevierConversations = await Conversation.find({
-        members: receiverId,
-      })
-        .sort({ lastMessageAt: -1 })
-        .limit();
-
-      io.to(receiverSocketId).emit(
-        "conversation updated",
-        updatedRecevierConversations
-      );
-      const senderSocketId = onlineUsers.get(sender);
-      io.to(senderSocketId).emit(
-        "conversation updated",
-        updatedSenderConversations
-      );
-      console.log("isReceiverInsideChat", receiverId);
-
-      if (!isReceiverInsideChat) {
-        try {
-          const token = generateAccessToken(sender);
-          await axios.post(
-            `${process.env.BASE_URL}/api/users/send-notification`,
-            {
-              userId: receiverId,
-              title: receiverDetails.username,
-              body: text,
-              data: {
-                chatId: conversationId,
-                senderId: sender,
-                receiverId: receiverId,
-                title: receiverDetails.username,
-                body: text,
-              },
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-        } catch (notifyErr) {
-          console.log("❌ Failed to send notification:", notifyErr.message);
-        }
-      }
-    } catch (error) {
-      console.error("❌ Error in send message:", error);
-    }
-  });
-
-  // socket.on("markAsSeen", async ({ conversationId, userId }) => {
-  //   try {
-  //     console.log("👁 markAsSeen event:", { conversationId, userId });
-
-  //     // 1️⃣ Mark all unseen messages from the other user as seen
-  //     await Message.updateMany(
-  //       { conversationId, sender: { $ne: userId }, seen: false },
-  //       { $set: { seen: true } }
-  //     );
-
-  //     // 2️⃣ Fetch the conversation
-  //     const conversation = await Conversation.findById(conversationId);
-  //     if (!conversation) return;
-
-  //     // 3️⃣ Update lastMessage for the receiver (reset unseen count)
-  //     const updatedLastMessage = conversation.lastMessage.map((entry) =>{
-
-  //     }
-  //       console.log("entry");
-
-  //       entry.id.toString() === userId.toString()
-  //         ? { ...entry, unseenMessagesCount: 0, seen: true }
-  //         : entry
-  //     );
-
-  //     await Conversation.updateOne(
-  //       { _id: conversationId },
-  //       {
-  //         $set: {
-  //           updatedAt: new Date(),
-  //           lastMessage: updatedLastMessage,
-  //         },
-  //       }
-  //     );
-
-  //     // 4️⃣ Find the OTHER user and notify them
-  //     const otherUserId = conversation.members.find(
-  //       (id) => id.toString() !== userId.toString()
-  //     );
-
-  //     const otherSocketId = onlineUsers.get(otherUserId.toString());
-  //     console.log("🔁 Other user socket ID =", otherSocketId);
-
-  //     // 5️⃣ Send updated conversation list to OTHER user
-  //     const updatedReceiverConversations = await Conversation.find({
-  //       members: otherUserId,
-  //     })
-  //       .sort({ lastMessageAt: -1 })
-  //       .lean();
-
-  //     io.emit("messages seen", {
-  //       conversationId,
-  //       seenBy: userId,
-  //     });
-  //     if (otherSocketId) {
-  //       io.to(otherSocketId).emit(
-  //         "conversation updated",
-  //         updatedReceiverConversations
-  //       );
-
-  //       io.emit("messages seen", {
-  //         conversationId,
-  //         seenBy: userId,
-  //       });
-
-  //       console.log("📩 Seen event emitted to other user");
-  //     } else {
-  //       console.log("❌ Other user offline → no emit");
-  //     }
-
-  //     console.log(`✅ Seen updated for conversation ${conversationId}`);
-  //   } catch (err) {
-  //     console.error("❌ Error in markAsSeen:", err);
-  //   }
-  // });
-
-  socket.on("markAsSeen", async ({ conversationId, userId, friendId }) => {
-    console.log(
-      "conversationId, userId, friendId",
-      conversationId,
-      userId,
-      friendId
+      }),
     );
 
-    if (!userId || !conversationId) return;
-
-    try {
-      await Message.updateMany(
-        { conversationId, seen: false },
-        { $set: { seen: true } },
-      );
-
-      const conversation = await Conversation.findById(conversationId);
-      if (!conversation) return;
-
-      const updatedLastMessage = await Promise.all(
-        conversation.members.map(async (memberId) => {
-          // how many messages this member has not seen (sent by the OTHER user)
-          const unseenCount = await Message.countDocuments({
-            conversationId,
-            sender: { $ne: memberId }, // messages from the other person
-            seen: false,
-          });
-
-          // last message text in this conversation (latest by createdAt)
-          const lastMsgDoc = await Message.findOne({ conversationId })
-            .sort({ createdAt: -1 })
-            .lean();
-
-          return {
-            id: memberId,
-            lastMessage: lastMsgDoc ? lastMsgDoc.text : "",
-            unseenMessagesCount: unseenCount,
-            seen: unseenCount === 0,
-          };
-        })
-      );
-
-      console.log(
-        "✅ updatedLastMessage in markAsSeen:",
-        JSON.stringify(updatedLastMessage)
-      );
-      await Conversation.updateOne(
-        { _id: conversationId },
-        {
-          $set: {
-            updatedAt: new Date(),
-            lastMessage: updatedLastMessage,
-          },
+    await Conversation.updateOne(
+      { _id: conversationId },
+      {
+        $set: {
+          updatedAt: new Date(),
+          lastMessage: updatedLastMessage,
         },
-      );
+      },
+    );
 
-      const senderSocketId = onlineUsers.get(userId);
-      const receiverSocketId = onlineUsers.get(friendId);
-      console.log("onlineUsers", onlineUsers);
-      console.log("receiverSocketId", receiverSocketId, senderSocketId);
+    // Only the conversation's members are told, not every connected client
+    io.to(conversation.members.map(String)).emit("messages seen", {
+      conversationId,
+      seenBy: userId,
+    });
 
-      io.to(receiverSocketId).emit("messages seen", {
-        conversationId,
-        seenBy: userId,
-      });
-
-      const updatedSenderConversations = await Conversation.find({
-        members: userId,
-      })
-        .sort({ lastMessageAt: -1 })
-        .limit();
-
-      io.to(senderSocketId).emit(
-        "conversation updated",
-        updatedSenderConversations
-      );
-      const updatedRecevierConversations = await Conversation.find({
-        members: friendId,
-      })
-        .sort({ lastMessageAt: -1 })
-        .limit();
-
-      io.to(receiverSocketId).emit(
-        "conversation updated",
-        updatedRecevierConversations
-      );
-      // Notify sender that receiver has read the messages 👇
-      conversation.members.forEach((memberId) => {
-        if (memberId.toString() !== userId.toString()) {
-          const senderSocketId = onlineUsers.get(memberId.toString());
-          if (senderSocketId) {
-            io.emit("messages seen", {
-              conversationId,
-              seenBy: userId, // receiver’s ID
-            });
-          }
-        }
-      });
-
-      console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
-    } catch (error) {
-      console.error("❌ Error in markAsSeen:", error);
+    const [userConversations, friendConversations] = await Promise.all([
+      getConversationsFor(userId),
+      friendId ? getConversationsFor(friendId) : [],
+    ]);
+    io.to(userId).emit("conversation updated", userConversations);
+    if (friendId) {
+      io.to(friendId).emit("conversation updated", friendConversations);
     }
+
+    console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
   });
-  socket.on("get messages", async (conversationId, callback) => {
+
+  on("get messages", async (conversationId, callback) => {
     try {
-      const messages = await Message.find({ conversationId })
+      const conversation = await findMemberConversation(conversationId, userId);
+      if (!conversation) {
+        return reply(callback, { success: false, messages: [] });
+      }
+
+      const messages = await Message.find({
+        conversationId: String(conversationId),
+      })
         .sort({ createdAt: 1 })
         .lean();
-      callback({ success: true, messages });
+      reply(callback, { success: true, messages });
     } catch (error) {
       console.error("❌ Error fetching messages:", error);
-      callback({ success: false, messages: [] });
+      reply(callback, { success: false, messages: [] });
     }
   });
 
-  socket.on("disconnect", () => {
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        console.log("🔴 Disconnected user:", userId);
-        break;
-      }
+  on("disconnect", async () => {
+    console.log("🔴 Disconnected socket:", userId, socket.id);
+
+    // The socket has already left its rooms here, so an empty personal room
+    // means this was the user's last open connection
+    if (!getUserSocketIds(userId)) {
+      await setUserStatus(userId, "offline");
     }
   });
 });
