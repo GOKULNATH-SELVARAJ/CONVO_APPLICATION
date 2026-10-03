@@ -18,8 +18,21 @@ const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
+const { buildReplySnapshot } = require("./utils/replySnapshot");
+const {
+  otherMembers,
+  markConversationRead,
+  refreshConversationSummary,
+} = require("./utils/readState");
+const {
+  getConversationsFor,
+  emitConversationLists,
+} = require("./utils/conversationEvents");
 const User = require("./models/User");
-const { findMemberConversation } = require("./utils/conversationAccess");
+const {
+  findMemberConversation,
+  visibleMessagesFilter,
+} = require("./utils/conversationAccess");
 const { sendPushNotification } = require("./notification/sendNotification");
 
 const app = express();
@@ -31,6 +44,8 @@ const io = socketIO(server, {
     credentials: true,
   },
 });
+// REST routes that change groups notify members live through this
+app.set("io", io);
 
 mongoose.connect(process.env.MONGO_URL);
 mongoose.connection.once("open", () => {
@@ -73,9 +88,6 @@ const setUserStatus = async (userId, status) => {
   await User.findByIdAndUpdate(userId, { status });
   io.emit("userStatus", { userId, status });
 };
-
-const getConversationsFor = (userId) =>
-  Conversation.find({ members: userId }).sort({ lastMessageAt: -1 });
 
 // Authenticate the handshake with the same access token used for the REST API.
 // Client: io(URL, { auth: { token: accessToken } })
@@ -150,15 +162,25 @@ io.on("connection", (socket) => {
 
   on("userOffline", () => setUserStatus(userId, "offline"));
 
-  on("typing", (payload) => {
-    const { receiverId } = payload || {};
-    if (receiverId) io.to(String(receiverId)).emit("typing", userId);
-  });
-
-  on("stopTyping", (payload) => {
-    const { receiverId } = payload || {};
-    if (receiverId) io.to(String(receiverId)).emit("stopTyping", userId);
-  });
+  // { conversationId } reaches every other member (groups and direct chats);
+  // the older { receiverId } form still works for direct chats. Receivers get
+  // (senderId, conversationId); older apps only read the first argument.
+  const relayTyping = (event) => async (payload) => {
+    const { conversationId, receiverId } = payload || {};
+    if (conversationId) {
+      const conversation = await findMemberConversation(conversationId, userId);
+      if (!conversation) return;
+      io.to(otherMembers(conversation, userId)).emit(
+        event,
+        userId,
+        String(conversation._id),
+      );
+    } else if (receiverId) {
+      io.to(String(receiverId)).emit(event, userId);
+    }
+  };
+  on("typing", relayTyping("typing"));
+  on("stopTyping", relayTyping("stopTyping"));
 
   on("leave chat", (payload) => {
     const { roomId } = payload || {};
@@ -172,9 +194,14 @@ io.on("connection", (socket) => {
   });
 
   // Validates and stores an incoming socket message.
-  // Resolves to { error } or { savedMessage, conversation, receiverId, isReceiverInsideChat }.
+  // Resolves to { error } or { savedMessage, conversation, recipients, readers }.
   const saveSocketMessage = async (newMessage) => {
-    const { conversationId, text, _id: existingMessageId } = newMessage || {};
+    const {
+      conversationId,
+      text,
+      replyToId,
+      _id: existingMessageId,
+    } = newMessage || {};
     if (typeof text !== "string" || !text.trim()) {
       return { error: "Message text is required" };
     }
@@ -182,19 +209,24 @@ io.on("connection", (socket) => {
     const conversation = await findMemberConversation(conversationId, userId);
     if (!conversation) return { error: "Conversation not found" };
 
-    const receiverId = conversation.members.find(
-      (memberId) => memberId.toString() !== userId,
-    );
-    if (!receiverId) return { error: "Conversation has no receiver" };
+    const recipients = otherMembers(conversation, userId);
+    if (recipients.length === 0) return { error: "Conversation has no receiver" };
 
-    const isReceiverInsideChat = isUserInRoom(receiverId, conversationId);
+    // Members with the chat open are reading it as it arrives
+    const readers = recipients.filter((memberId) =>
+      isUserInRoom(memberId, conversationId),
+    );
+    const readState = {
+      seenBy: readers,
+      seen: readers.length === recipients.length,
+    };
 
     // Clients that already saved the message via POST /api/message pass the
     // saved document here; reuse it instead of storing a duplicate
     let savedMessage = mongoose.isValidObjectId(existingMessageId)
       ? await Message.findOneAndUpdate(
           { _id: existingMessageId, conversationId, sender: userId },
-          { seen: isReceiverInsideChat },
+          readState,
           { new: true },
         )
       : null;
@@ -204,12 +236,13 @@ io.on("connection", (socket) => {
         conversationId,
         sender: userId,
         text,
-        seen: isReceiverInsideChat,
+        ...readState,
+        replyTo: await buildReplySnapshot(conversationId, replyToId),
         createdAt: new Date(),
       });
     }
 
-    return { savedMessage, conversation, receiverId, isReceiverInsideChat };
+    return { savedMessage, conversation, recipients, readers };
   };
 
   // Optional ack as the last argument:
@@ -229,68 +262,51 @@ io.on("connection", (socket) => {
       return reply(ack, { success: false, error: result.error });
     }
 
-    const { savedMessage, conversation, receiverId, isReceiverInsideChat } =
-      result;
+    const { savedMessage, conversation, recipients, readers } = result;
     const conversationId = String(conversation._id);
 
     // Acknowledge as soon as the message is stored; the fan-out below can't undo that
     reply(ack, { success: true, message: savedMessage });
 
-    io.to(receiverId).emit("message received", savedMessage);
+    io.to(recipients).emit("message received", savedMessage);
 
-    // The receiver has this chat open, so the message was stored as already
-    // read. Tell the sender now instead of relying on the receiver's app to
-    // follow up with markAsSeen (older app builds skip it for messages in a
-    // row), otherwise the sender's ticks stay grey while the DB says seen.
-    if (isReceiverInsideChat) {
+    // Everyone had the chat open, so it was stored as already read. Tell the
+    // sender now instead of relying on the readers' apps to follow up with
+    // markAsSeen, otherwise the sender's ticks stay grey while the DB says seen.
+    if (savedMessage.seen) {
       io.to(userId).emit("messages seen", {
         conversationId,
-        seenBy: String(receiverId),
+        // Kept for direct chats on older app builds
+        seenBy: conversation.isGroup ? undefined : readers[0],
+        messageIds: [String(savedMessage._id)],
       });
     }
 
-    // Counted from the messages themselves so a message already counted by
-    // POST /api/message isn't counted twice
-    const receiverUnseenCount = await Message.countDocuments({
-      conversationId,
-      sender: { $ne: receiverId },
-      seen: false,
-    });
+    await refreshConversationSummary(conversationId);
+    await emitConversationLists(io, conversation.members);
 
-    const updatedLastMessage = conversation.members.map((memberId) => ({
-      id: memberId,
-      lastMessage: savedMessage.text,
-      seen: isReceiverInsideChat,
-      unseenMessagesCount:
-        memberId.toString() === userId ? 0 : receiverUnseenCount,
-    }));
-
-    await Conversation.findByIdAndUpdate(conversationId, {
-      lastMessage: updatedLastMessage,
-      lastMessageAt: new Date(),
-      updatedAt: new Date(),
-      lastMessageSentBy: userId,
-    });
-
-    const [senderConversations, receiverConversations] = await Promise.all([
-      getConversationsFor(userId),
-      getConversationsFor(receiverId),
-    ]);
-    io.to(receiverId).emit("conversation updated", receiverConversations);
-    io.to(userId).emit("conversation updated", senderConversations);
-
-    if (!isReceiverInsideChat) {
+    const absent = recipients.filter((memberId) => !readers.includes(memberId));
+    if (absent.length > 0) {
       try {
         const sender = await User.findById(userId).select("username").lean();
-        const title = sender?.username || "New message";
+        const senderName = sender?.username || "Someone";
+        // Direct chat: titled by the sender. Group: by the group, with the
+        // sender inside the message.
+        const title = conversation.isGroup ? conversation.name : senderName;
 
-        await sendPushNotification(receiverId, {
-          chatId: conversationId,
-          senderId: userId,
-          receiverId,
-          title,
-          body: savedMessage.text,
-        });
+        await Promise.all(
+          absent.map((receiverId) =>
+            sendPushNotification(receiverId, {
+              chatId: conversationId,
+              senderId: userId,
+              receiverId,
+              title,
+              body: savedMessage.text,
+              senderName,
+              ...(conversation.isGroup ? { isGroup: "1" } : {}),
+            }),
+          ),
+        );
       } catch (notifyErr) {
         console.log("❌ Failed to send notification:", notifyErr.message);
       }
@@ -303,62 +319,18 @@ io.on("connection", (socket) => {
     const conversation = await findMemberConversation(conversationId, userId);
     if (!conversation) return;
 
-    const friendId = conversation.members.find(
-      (memberId) => memberId.toString() !== userId,
-    );
+    const newlySeen = await markConversationRead(conversation, userId);
 
-    // Only messages sent TO this user become seen, not the ones they sent
-    await Message.updateMany(
-      { conversationId, sender: { $ne: userId }, seen: false },
-      { $set: { seen: true } },
-    );
-
-    const lastMsgDoc = await Message.findOne({ conversationId })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const updatedLastMessage = await Promise.all(
-      conversation.members.map(async (memberId) => {
-        // how many messages this member has not seen (sent by the OTHER user)
-        const unseenCount = await Message.countDocuments({
-          conversationId,
-          sender: { $ne: memberId },
-          seen: false,
-        });
-
-        return {
-          id: memberId,
-          lastMessage: lastMsgDoc ? lastMsgDoc.text : "",
-          unseenMessagesCount: unseenCount,
-          seen: unseenCount === 0,
-        };
-      }),
-    );
-
-    await Conversation.updateOne(
-      { _id: conversationId },
-      {
-        $set: {
-          updatedAt: new Date(),
-          lastMessage: updatedLastMessage,
-        },
-      },
-    );
-
-    // Only the conversation's members are told, not every connected client
+    // Only the conversation's members are told, not every connected client.
+    // messageIds lists the messages now read by everyone (blue ticks).
     io.to(conversation.members.map(String)).emit("messages seen", {
-      conversationId,
+      conversationId: String(conversation._id),
       seenBy: userId,
+      messageIds: newlySeen,
     });
 
-    const [userConversations, friendConversations] = await Promise.all([
-      getConversationsFor(userId),
-      friendId ? getConversationsFor(friendId) : [],
-    ]);
-    io.to(userId).emit("conversation updated", userConversations);
-    if (friendId) {
-      io.to(friendId).emit("conversation updated", friendConversations);
-    }
+    await refreshConversationSummary(conversation._id);
+    await emitConversationLists(io, conversation.members);
 
     console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
   });
@@ -370,9 +342,9 @@ io.on("connection", (socket) => {
         return reply(callback, { success: false, messages: [] });
       }
 
-      const messages = await Message.find({
-        conversationId: String(conversationId),
-      })
+      const messages = await Message.find(
+        visibleMessagesFilter(conversation, userId),
+      )
         .sort({ createdAt: 1 })
         .lean();
       reply(callback, { success: true, messages });
