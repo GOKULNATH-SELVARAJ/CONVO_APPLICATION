@@ -1,10 +1,34 @@
 const mongoose = require("mongoose");
 
+// Upper bound on group size, so fan-out (sockets, pushes, unread recounts)
+// stays cheap.
+const MAX_GROUP_MEMBERS = 50;
+const MAX_GROUP_NAME_LENGTH = 50;
+
 const conversationSchema = new mongoose.Schema(
   {
     members: {
       type: [String],
       required: true,
+    },
+    // Direct chats (the original kind) have no isGroup field; treat missing
+    // as false.
+    isGroup: {
+      type: Boolean,
+      default: false,
+    },
+    // Groups only
+    name: {
+      type: String,
+      trim: true,
+      maxlength: MAX_GROUP_NAME_LENGTH,
+    },
+    admins: {
+      type: [String],
+      default: undefined,
+    },
+    createdBy: {
+      type: String,
     },
     lastMessageAt: {
       type: Date,
@@ -14,6 +38,15 @@ const conversationSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // "text" or "system" (e.g. "Gokul added Priya"), so the chat list can skip
+    // ticks and sender prefixes for system lines
+    lastMessageType: {
+      type: String,
+      default: "text",
+    },
+    // One entry per member: the last message text, how many messages that
+    // member hasn't read, and whether the last message is read (by that
+    // member, or for the sender's own entry, by everyone).
     lastMessage: [
       {
         id: String,
@@ -27,3 +60,5 @@ const conversationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Conversation", conversationSchema);
+module.exports.MAX_GROUP_MEMBERS = MAX_GROUP_MEMBERS;
+module.exports.MAX_GROUP_NAME_LENGTH = MAX_GROUP_NAME_LENGTH;
