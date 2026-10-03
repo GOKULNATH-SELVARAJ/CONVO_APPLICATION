@@ -195,7 +195,8 @@ router.patch("/group/:id", auth, async (req, res) => {
   }
 });
 
-// Add members: { memberIds }
+// Add members: { memberIds, shareHistory }. shareHistory (default false) lets
+// them read the messages from before they were added.
 router.post("/group/:id/members", auth, async (req, res) => {
   try {
     const group = await loadGroup(req, res, { adminOnly: true });
@@ -209,12 +210,21 @@ router.post("/group/:id/members", auth, async (req, res) => {
       return fail(res, 400, `A group can have at most ${MAX_GROUP_MEMBERS} members.`);
     }
 
-    // New members can read the history; count it as read for them so they
-    // don't start with a huge unread badge and old ticks stay settled.
+    // Earlier messages count as read by the new members either way, so they
+    // don't hold back other senders' blue ticks or show up as unread.
     await Message.updateMany(
       { conversationId: String(group._id) },
       { $addToSet: { seenBy: { $each: newIds } } },
     );
+    // Without shared history they only see messages from now on (joinedAt).
+    // With it, any entry left from an earlier membership is cleared too.
+    const shareHistory = req.body.shareHistory === true;
+    const now = new Date();
+    if (!group.joinedAt) group.joinedAt = new Map();
+    newIds.forEach((id) => {
+      if (shareHistory) group.joinedAt.delete(id);
+      else group.joinedAt.set(id, now);
+    });
     group.members.push(...newIds);
     await group.save();
 
@@ -241,6 +251,7 @@ router.delete("/group/:id/members/:memberId", auth, async (req, res) => {
 
     group.members = group.members.filter((id) => id !== memberId);
     group.admins = (group.admins || []).filter((id) => id !== memberId);
+    group.joinedAt?.delete(memberId);
     await group.save();
 
     await postGroupEvent(
@@ -266,6 +277,7 @@ router.post("/group/:id/leave", auth, async (req, res) => {
 
     group.members = group.members.filter((id) => id !== req.userId);
     group.admins = (group.admins || []).filter((id) => id !== req.userId);
+    group.joinedAt?.delete(req.userId);
 
     if (group.members.length === 0) {
       await Message.deleteMany({ conversationId: String(group._id) });

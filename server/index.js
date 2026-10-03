@@ -29,7 +29,10 @@ const {
   emitConversationLists,
 } = require("./utils/conversationEvents");
 const User = require("./models/User");
-const { findMemberConversation } = require("./utils/conversationAccess");
+const {
+  findMemberConversation,
+  visibleMessagesFilter,
+} = require("./utils/conversationAccess");
 const { sendPushNotification } = require("./notification/sendNotification");
 
 const app = express();
@@ -339,9 +342,9 @@ io.on("connection", (socket) => {
         return reply(callback, { success: false, messages: [] });
       }
 
-      const messages = await Message.find({
-        conversationId: String(conversationId),
-      })
+      const messages = await Message.find(
+        visibleMessagesFilter(conversation, userId),
+      )
         .sort({ createdAt: 1 })
         .lean();
       reply(callback, { success: true, messages });

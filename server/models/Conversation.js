@@ -30,6 +30,14 @@ const conversationSchema = new mongoose.Schema(
     createdBy: {
       type: String,
     },
+    // When members added to an existing group joined (userId -> date). They
+    // only see messages from then on, as in WhatsApp. Members without an
+    // entry (the original members, everyone in older groups) see it all.
+    joinedAt: {
+      type: Map,
+      of: Date,
+      default: undefined,
+    },
     lastMessageAt: {
       type: Date,
       default: null,

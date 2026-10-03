@@ -1,7 +1,10 @@
 const router = require("express").Router();
 const Message = require("../models/message");
 const auth = require("../middleware/authMiddleware");
-const { findMemberConversation } = require("../utils/conversationAccess");
+const {
+  findMemberConversation,
+  visibleMessagesFilter,
+} = require("../utils/conversationAccess");
 const { buildReplySnapshot } = require("../utils/replySnapshot");
 const {
   markConversationRead,
@@ -78,9 +81,10 @@ router.get("/:conversationId", auth, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const messages = await Message.find({
-      conversationId: req.params.conversationId,
-    }).sort({ createdAt: 1 });
+    // Members added to a group later don't get the history before they joined
+    const messages = await Message.find(
+      visibleMessagesFilter(conversation, req.userId),
+    ).sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (error) {
     res.status(500).json(error);
@@ -98,9 +102,9 @@ router.get("/last/:conversationId", auth, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const lastMessage = await Message.findOne({
-      conversationId: req.params.conversationId,
-    })
+    const lastMessage = await Message.findOne(
+      visibleMessagesFilter(conversation, req.userId),
+    )
       .sort({ createdAt: -1 })
       .limit(1);
 
