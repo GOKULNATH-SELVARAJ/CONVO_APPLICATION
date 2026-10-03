@@ -18,6 +18,7 @@ const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
+const { buildReplySnapshot } = require("./utils/replySnapshot");
 const User = require("./models/User");
 const { findMemberConversation } = require("./utils/conversationAccess");
 const { sendPushNotification } = require("./notification/sendNotification");
@@ -174,7 +175,12 @@ io.on("connection", (socket) => {
   // Validates and stores an incoming socket message.
   // Resolves to { error } or { savedMessage, conversation, receiverId, isReceiverInsideChat }.
   const saveSocketMessage = async (newMessage) => {
-    const { conversationId, text, _id: existingMessageId } = newMessage || {};
+    const {
+      conversationId,
+      text,
+      replyToId,
+      _id: existingMessageId,
+    } = newMessage || {};
     if (typeof text !== "string" || !text.trim()) {
       return { error: "Message text is required" };
     }
@@ -205,6 +211,7 @@ io.on("connection", (socket) => {
         sender: userId,
         text,
         seen: isReceiverInsideChat,
+        replyTo: await buildReplySnapshot(conversationId, replyToId),
         createdAt: new Date(),
       });
     }

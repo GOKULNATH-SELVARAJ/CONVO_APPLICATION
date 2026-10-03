@@ -23,6 +23,19 @@ const messageSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // The message this one replies to, copied at send time so the quote still
+    // shows if the original can't be loaded. Absent on ordinary messages.
+    replyTo: {
+      type: new mongoose.Schema(
+        {
+          messageId: { type: String, required: true },
+          sender: { type: String, required: true },
+          text: { type: String, required: true },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true }
 );

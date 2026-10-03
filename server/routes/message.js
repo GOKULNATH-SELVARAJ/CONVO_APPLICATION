@@ -3,11 +3,12 @@ const Message = require("../models/message");
 const Conversation = require("../models/Conversation");
 const auth = require("../middleware/authMiddleware");
 const { findMemberConversation } = require("../utils/conversationAccess");
+const { buildReplySnapshot } = require("../utils/replySnapshot");
 
 
 // Add Message (the logged-in user is always the sender)
 router.post("/", auth, async (req, res) => {
-  const { conversationId, text } = req.body;
+  const { conversationId, text, replyToId } = req.body;
   const sender = req.userId;
 
   if (!conversationId || typeof text !== "string" || !text.trim()) {
@@ -21,12 +22,15 @@ router.post("/", auth, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    // Step 2: Save message with seen = false
+    // Step 2: Save message with seen = false (a reply carries a quote of
+    // the original; an unknown replyToId is ignored)
+    const replyTo = await buildReplySnapshot(conversationId, replyToId);
     const savedMessage = await new Message({
       conversationId,
       sender,
       text,
       seen: false,
+      replyTo,
     }).save();
 
     // Step 3: Recompute unseen message counts per user
