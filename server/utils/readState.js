@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Message = require("../models/message");
 const Conversation = require("../models/Conversation");
 
@@ -43,19 +44,31 @@ const settleFullyRead = async (conversation) => {
   return newlySeen;
 };
 
-// Records that `userId` has read everything in the conversation.
-// Returns the ids of messages that are now read by everyone.
-const markConversationRead = async (conversation, userId) => {
-  await Message.updateMany(
-    {
-      conversationId: String(conversation._id),
-      sender: { $ne: String(userId) },
-      seen: false,
-      seenBy: { $ne: String(userId) },
-    },
-    { $addToSet: { seenBy: String(userId) } },
-  );
-  return settleFullyRead(conversation);
+// Records that `userId` has read these messages, or every unread one in the
+// conversation when `messageIds` is omitted. Returns the messages this user
+// has newly read (for read receipts) and the ids now read by everyone.
+const markMessagesRead = async (conversation, userId, messageIds) => {
+  const filter = {
+    conversationId: String(conversation._id),
+    sender: { $ne: String(userId) },
+    seen: false,
+    seenBy: { $ne: String(userId) },
+  };
+  if (Array.isArray(messageIds)) {
+    filter._id = { $in: messageIds.filter((id) => mongoose.isValidObjectId(id)) };
+  }
+
+  const read = await Message.find(filter)
+    .select("_id sender conversationId")
+    .lean();
+  if (read.length > 0) {
+    await Message.updateMany(
+      { _id: { $in: read.map((message) => message._id) } },
+      { $addToSet: { seenBy: String(userId) } },
+    );
+  }
+  const fullyRead = await settleFullyRead(conversation);
+  return { read, fullyRead };
 };
 
 // Recomputes the chat-list summary (last message, per-member unread counts and
@@ -99,6 +112,6 @@ const refreshConversationSummary = async (conversationId) => {
 module.exports = {
   otherMembers,
   settleFullyRead,
-  markConversationRead,
+  markMessagesRead,
   refreshConversationSummary,
 };

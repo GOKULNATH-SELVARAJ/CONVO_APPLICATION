@@ -6,6 +6,7 @@ const { MAX_GROUP_MEMBERS, MAX_GROUP_NAME_LENGTH } = require("../models/Conversa
 const Message = require("../models/message");
 const User = require("../models/User");
 const { postGroupEvent, emitConversationLists } = require("../utils/conversationEvents");
+const { dropConversationMail } = require("../utils/mailbox");
 
 //New conversation (the logged-in user is always the sender)
 router.post("/", auth, async (req, res) => {
@@ -253,6 +254,8 @@ router.delete("/group/:id/members/:memberId", auth, async (req, res) => {
     group.admins = (group.admins || []).filter((id) => id !== memberId);
     group.joinedAt?.delete(memberId);
     await group.save();
+    // Mail still waiting for them from this group is no longer theirs to read
+    await dropConversationMail(group._id, memberId);
 
     await postGroupEvent(
       req.app.get("io"),
@@ -281,11 +284,13 @@ router.post("/group/:id/leave", auth, async (req, res) => {
 
     if (group.members.length === 0) {
       await Message.deleteMany({ conversationId: String(group._id) });
+      await dropConversationMail(group._id);
       await group.deleteOne();
       return res.status(200).json({ success: true, deleted: true });
     }
     if (group.admins.length === 0) group.admins = [group.members[0]];
     await group.save();
+    await dropConversationMail(group._id, req.userId);
 
     await postGroupEvent(
       req.app.get("io"),

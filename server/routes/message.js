@@ -7,7 +7,12 @@ const {
 } = require("../utils/conversationAccess");
 const { buildReplySnapshot } = require("../utils/replySnapshot");
 const {
-  markConversationRead,
+  ownedDevice,
+  queueMessage,
+  queueReceipts,
+} = require("../utils/mailbox");
+const {
+  markMessagesRead,
   refreshConversationSummary,
 } = require("../utils/readState");
 
@@ -43,6 +48,15 @@ router.post("/", auth, async (req, res) => {
     // Delivery and read state are handled when the app emits "send message".
     await refreshConversationSummary(conversationId);
 
+    // Step 4: Queue it for members' devices. The sending device (X-Device-Id)
+    // already has it. Mailbox trouble must not fail a message that is saved.
+    try {
+      const senderDeviceId = await ownedDevice(sender, req.get("x-device-id"));
+      await queueMessage(req.app.get("io"), savedMessage, conversation.members, senderDeviceId);
+    } catch (error) {
+      console.error("❌ Could not queue message for devices:", error);
+    }
+
     res.status(200).json(savedMessage);
   } catch (error) {
     console.error("❌ Error in message post:", error);
@@ -61,8 +75,13 @@ router.post("/seen", auth, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    await markConversationRead(conversation, userId);
+    const { read } = await markMessagesRead(conversation, userId);
     await refreshConversationSummary(conversationId);
+    try {
+      await queueReceipts(req.app.get("io"), "read", userId, read);
+    } catch (error) {
+      console.error("❌ Could not queue read receipts:", error);
+    }
 
     res.status(200).json({ message: "Unseen messages count reset." });
   } catch (error) {

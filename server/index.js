@@ -18,12 +18,22 @@ const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
 const conversationRoutes = require("./routes/conversation");
 const messageRoutes = require("./routes/message");
+const syncRoutes = require("./routes/sync");
 const { buildReplySnapshot } = require("./utils/replySnapshot");
 const {
   otherMembers,
-  markConversationRead,
+  markMessagesRead,
   refreshConversationSummary,
 } = require("./utils/readState");
+const {
+  isDeviceId,
+  deviceRoom,
+  registerDevice,
+  queueMessage,
+  queueReceipts,
+  fetchMail,
+  acknowledge,
+} = require("./utils/mailbox");
 const {
   getConversationsFor,
   emitConversationLists,
@@ -59,6 +69,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/conversation", conversationRoutes);
 app.use("/api/message", messageRoutes);
+app.use("/api/sync", syncRoutes);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
@@ -134,6 +145,24 @@ io.on("connection", (socket) => {
   setUserStatus(userId, "online").catch((error) =>
     console.error("❌ Failed to set user online:", error),
   );
+
+  // App versions with a mailbox name their device in the handshake
+  // (auth: { token, deviceId, platform }). Resolves to the device id once it
+  // is registered to this user, or null (older apps, or an id another
+  // account owns). Mailbox handlers wait for it.
+  const deviceReady = (async () => {
+    const { deviceId, platform } = socket.handshake.auth || {};
+    if (!isDeviceId(deviceId)) return null;
+    if (!(await registerDevice(userId, deviceId, platform))) {
+      console.warn(`⚠️ Device ${deviceId} belongs to another account`);
+      return null;
+    }
+    socket.join(deviceRoom(deviceId));
+    return deviceId;
+  })().catch((error) => {
+    console.error("❌ Failed to register device:", error);
+    return null;
+  });
 
   // Kept for client compatibility; the user is already identified by the token
   on("setup", () => {
@@ -270,6 +299,17 @@ io.on("connection", (socket) => {
 
     io.to(recipients).emit("message received", savedMessage);
 
+    // Queue it for members' devices (none for older apps). Members with the
+    // chat open have read it already, so their read receipts go out too.
+    try {
+      await queueMessage(io, savedMessage, conversation.members, await deviceReady);
+      for (const readerId of readers) {
+        await queueReceipts(io, "read", readerId, [savedMessage]);
+      }
+    } catch (error) {
+      console.error("❌ Could not queue message for devices:", error);
+    }
+
     // Everyone had the chat open, so it was stored as already read. Tell the
     // sender now instead of relying on the readers' apps to follow up with
     // markAsSeen, otherwise the sender's ticks stay grey while the DB says seen.
@@ -313,26 +353,86 @@ io.on("connection", (socket) => {
     }
   });
 
-  on("markAsSeen", async (payload) => {
-    const { conversationId } = payload || {};
-
+  // Records that this user read the given messages (all unread ones when
+  // messageIds is omitted) and tells everyone who needs to know.
+  const markRead = async (conversationId, messageIds) => {
     const conversation = await findMemberConversation(conversationId, userId);
-    if (!conversation) return;
+    if (!conversation) return false;
 
-    const newlySeen = await markConversationRead(conversation, userId);
+    const { read, fullyRead } = await markMessagesRead(
+      conversation,
+      userId,
+      messageIds,
+    );
 
     // Only the conversation's members are told, not every connected client.
     // messageIds lists the messages now read by everyone (blue ticks).
     io.to(conversation.members.map(String)).emit("messages seen", {
       conversationId: String(conversation._id),
       seenBy: userId,
-      messageIds: newlySeen,
+      messageIds: fullyRead,
     });
+
+    // Read receipts to the senders' devices
+    try {
+      await queueReceipts(io, "read", userId, read);
+    } catch (error) {
+      console.error("❌ Could not queue read receipts:", error);
+    }
 
     await refreshConversationSummary(conversation._id);
     await emitConversationLists(io, conversation.members);
+    return true;
+  };
 
-    console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
+  on("markAsSeen", async (payload) => {
+    const { conversationId } = payload || {};
+    if (await markRead(conversationId)) {
+      console.log(`✅ ${userId} marked conversation ${conversationId} as seen`);
+    }
+  });
+
+  // ---- Mailbox (app versions that store messages on the device) ----
+
+  // { conversationId, messageIds }: the messages this device has shown
+  on("ack read", async (payload, callback) => {
+    const { conversationId, messageIds } = payload || {};
+    if (!Array.isArray(messageIds)) {
+      return reply(callback, { success: false, error: "messageIds required" });
+    }
+    const done = await markRead(conversationId, messageIds.map(String));
+    reply(callback, { success: done });
+  });
+
+  // { after, limit } -> { success, envelopes }: waiting mail, oldest first.
+  // Pass the last envelope's id as `after` to page through it.
+  on("sync", async (payload, callback) => {
+    const deviceId = await deviceReady;
+    if (!deviceId) {
+      return reply(callback, { success: false, error: "Device not registered" });
+    }
+    try {
+      const envelopes = await fetchMail(userId, deviceId, payload || {});
+      reply(callback, { success: true, envelopes });
+    } catch (error) {
+      reply(callback, { success: false, error: "Could not fetch mail" });
+      throw error;
+    }
+  });
+
+  // { messageIds }: mail this device has stored, so the server can delete it
+  on("ack delivered", async (payload, callback) => {
+    const deviceId = await deviceReady;
+    if (!deviceId) {
+      return reply(callback, { success: false, error: "Device not registered" });
+    }
+    try {
+      const removed = await acknowledge(io, userId, deviceId, payload?.messageIds);
+      reply(callback, { success: true, removed });
+    } catch (error) {
+      reply(callback, { success: false, error: "Could not acknowledge mail" });
+      throw error;
+    }
   });
 
   on("get messages", async (conversationId, callback) => {

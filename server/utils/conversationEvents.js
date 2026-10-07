@@ -3,6 +3,7 @@ const Message = require("../models/message");
 const User = require("../models/User");
 const { refreshConversationSummary, settleFullyRead } = require("./readState");
 const { sendPushNotification } = require("../notification/sendNotification");
+const { queueMessage } = require("./mailbox");
 
 const getConversationsFor = (userId) =>
   Conversation.find({ members: String(userId) }).sort({ lastMessageAt: -1 });
@@ -73,6 +74,11 @@ const postGroupEvent = async (io, conversation, actorId, event, alsoNotify = [])
 
   const recipients = [...conversation.members.map(String), ...alsoNotify.map(String)];
   io.to(recipients).emit("message received", message);
+  try {
+    await queueMessage(io, message, recipients);
+  } catch (error) {
+    console.error("❌ Could not queue group event for devices:", error);
+  }
 
   // Membership changes can complete read receipts (e.g. the only member who
   // hadn't read a message left)

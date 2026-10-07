@@ -10,6 +10,7 @@ const {
   normalizeLetter,
 } = require("../utils/colorGeneration"); // adjust path as needed
 const { generateAccessToken, generateRefreshToken } = require("../utils/token");
+const { removeDevice } = require("../utils/mailbox");
 
 const isNonEmptyString = (value) =>
   typeof value === "string" && value.trim() !== "";
@@ -196,11 +197,12 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// Logout -> revoke the stored refresh token, and this device's push token if sent
+// Logout -> revoke the stored refresh token, and this device's push token and
+// mailbox (deviceId) if sent
 router.post("/logout", auth, async (req, res) => {
   try {
     const userId = req.userId;
-    const { fcmToken } = req.body;
+    const { fcmToken, deviceId } = req.body || {};
 
     const update = { $unset: { refreshToken: 1 } };
     if (isNonEmptyString(fcmToken)) {
@@ -212,6 +214,9 @@ router.post("/logout", auth, async (req, res) => {
       // Legacy single-token field
       await User.updateOne({ _id: userId, fcmToken }, { fcmToken: null });
     }
+
+    // This device stops getting mail; what was waiting for it is dropped
+    await removeDevice(userId, deviceId);
 
     res.json({
       success: true,
