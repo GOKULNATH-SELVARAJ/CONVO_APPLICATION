@@ -2,9 +2,12 @@ const mongoose = require("mongoose");
 const Device = require("../models/Device");
 const Envelope = require("../models/Envelope");
 const { ENVELOPE_TTL_MS } = require("../models/Envelope");
+const { messageKey } = require("../models/message");
 
 // Store-and-forward delivery: every message is queued once per device that
 // should get it and deleted when that device confirms it has stored it.
+// Devices know a message by its key: the clientId its app gave it, or the
+// _id for messages from older apps.
 //
 // While the app moves over, messages are still kept in the Message
 // collection too; devices that never register (older app versions) only use
@@ -135,7 +138,7 @@ const messagePayload = (message) => {
     ...(replyTo?.messageId
       ? {
           replyTo: {
-            messageId: replyTo.messageId,
+            messageId: replyTo.clientId || replyTo.messageId,
             sender: replyTo.sender,
             text: replyTo.text,
           },
@@ -160,7 +163,7 @@ const queueMessage = async (io, message, userIds, senderDeviceId = null) => {
     devices
       .filter((device) => device.deviceId !== senderDeviceId)
       .map((device) => ({
-        messageId: String(message._id),
+        messageId: messageKey(message),
         kind: "message",
         conversationId: String(message.conversationId),
         senderUserId: String(message.sender),
@@ -176,8 +179,8 @@ const queueMessage = async (io, message, userIds, senderDeviceId = null) => {
 
 /**
  * Tells senders that `byUserId` has received or read their messages.
- * `messages`: [{ _id, sender, conversationId }]. One receipt goes to each of
- * a sender's devices per conversation.
+ * `messages`: [{ _id, clientId?, sender, conversationId }]. One receipt goes
+ * to each of a sender's devices per conversation.
  */
 const queueReceipts = async (io, status, byUserId, messages) => {
   const by = String(byUserId);
@@ -193,7 +196,7 @@ const queueReceipts = async (io, status, byUserId, messages) => {
         messageIds: [],
       });
     }
-    groups.get(key).messageIds.push(String(message._id));
+    groups.get(key).messageIds.push(messageKey(message));
   }
   if (groups.size === 0) return [];
 

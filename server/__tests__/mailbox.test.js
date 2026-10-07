@@ -15,6 +15,7 @@ const {
   dropConversationMail,
 } = require("../utils/mailbox");
 const { markMessagesRead } = require("../utils/readState");
+const { buildReplySnapshot } = require("../utils/replySnapshot");
 
 let mongo;
 
@@ -256,6 +257,69 @@ describe("read receipts", () => {
     expect(rest.read.map((m) => String(m._id))).toEqual([String(second._id)]);
 
     expect((await markMessagesRead(conversation, B)).read).toEqual([]);
+  });
+});
+
+describe("messages from apps that store them on the device", () => {
+  const CLIENT_ID = "0b6e2a4c-9f1d-4c3e-8a7b-5d2f1e0c9a8b";
+
+  it("uses the app's id for the envelope and for receipts", async () => {
+    await setUpDevices();
+    const message = await sendMessage({ clientId: CLIENT_ID });
+
+    const io = fakeIo();
+    await queueMessage(io, message, [A, B], "device-a-phone");
+    expect(io.emitted.map((e) => e.data.messageId)).toEqual([CLIENT_ID, CLIENT_ID]);
+
+    const receiptIo = fakeIo();
+    await acknowledge(receiptIo, B, "device-b-phone", [CLIENT_ID]);
+    expect(JSON.parse(receiptIo.emitted[0].data.payload).messageIds).toEqual([CLIENT_ID]);
+  });
+
+  it("stores a retried message once", async () => {
+    await Message.init();
+    await sendMessage({ clientId: CLIENT_ID });
+    await expect(sendMessage({ clientId: CLIENT_ID })).rejects.toThrow(/duplicate key/);
+    // Another sender may use the same id; ids only need to be unique per sender
+    await expect(sendMessage({ clientId: CLIENT_ID, sender: B })).resolves.toBeTruthy();
+  });
+
+  it("marks messages read by their app id", async () => {
+    const conversation = await Conversation.create({ members: [A, B] });
+    const conversationId = String(conversation._id);
+    const withId = await sendMessage({ conversationId, clientId: CLIENT_ID });
+    await sendMessage({ conversationId });
+
+    const { read } = await markMessagesRead(conversation, B, [CLIENT_ID]);
+    expect(read.map((m) => String(m._id))).toEqual([String(withId._id)]);
+    expect(read[0].clientId).toBe(CLIENT_ID);
+  });
+
+  it("quotes a reply to it by its app id, for both kinds of app", async () => {
+    const original = await sendMessage({ clientId: CLIENT_ID, text: "Original" });
+
+    const byClientId = await buildReplySnapshot("conv1", CLIENT_ID);
+    const byMongoId = await buildReplySnapshot("conv1", String(original._id));
+    const expected = {
+      messageId: String(original._id), // older apps jump to the quote by _id
+      clientId: CLIENT_ID,
+      sender: A,
+      text: "Original",
+    };
+    expect(byClientId).toEqual(expected);
+    expect(byMongoId).toEqual(expected);
+    expect(await buildReplySnapshot("conv2", CLIENT_ID)).toBeUndefined();
+
+    // Devices get the quote by the id they know
+    await setUpDevices();
+    const reply = await sendMessage({ sender: B, text: "Reply", replyTo: byMongoId });
+    const io = fakeIo();
+    await queueMessage(io, reply, [A]);
+    expect(JSON.parse(io.emitted[0].data.payload).replyTo).toEqual({
+      messageId: CLIENT_ID,
+      sender: A,
+      text: "Original",
+    });
   });
 });
 

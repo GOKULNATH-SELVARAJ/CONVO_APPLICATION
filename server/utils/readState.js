@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Message = require("../models/message");
+const { isClientId } = require("../models/message");
 const Conversation = require("../models/Conversation");
 
 // Read state works the same for direct chats and groups:
@@ -54,12 +55,16 @@ const markMessagesRead = async (conversation, userId, messageIds) => {
     seen: false,
     seenBy: { $ne: String(userId) },
   };
+  // Ids are _ids, or clientIds from apps that store messages on the device
   if (Array.isArray(messageIds)) {
-    filter._id = { $in: messageIds.filter((id) => mongoose.isValidObjectId(id)) };
+    filter.$or = [
+      { _id: { $in: messageIds.filter((id) => mongoose.isValidObjectId(id)) } },
+      { clientId: { $in: messageIds.filter(isClientId) } },
+    ];
   }
 
   const read = await Message.find(filter)
-    .select("_id sender conversationId")
+    .select("_id clientId sender conversationId")
     .lean();
   if (read.length > 0) {
     await Message.updateMany(

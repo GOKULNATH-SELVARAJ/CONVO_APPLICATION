@@ -13,6 +13,7 @@ const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
 
 const Message = require("./models/message");
+const { isClientId } = require("./models/message");
 const Conversation = require("./models/Conversation");
 const userRoutes = require("./routes/users");
 const authRoutes = require("./routes/auth");
@@ -223,20 +224,34 @@ io.on("connection", (socket) => {
   });
 
   // Validates and stores an incoming socket message.
-  // Resolves to { error } or { savedMessage, conversation, recipients, readers }.
+  // Resolves to { error }, { savedMessage, duplicate: true } for a message
+  // already stored (an app retrying), or
+  // { savedMessage, conversation, recipients, readers }.
+  //
+  // Apps that store messages on the device send { clientId, conversationId,
+  // text, replyToId }; clientId is their id for the message.
   const saveSocketMessage = async (newMessage) => {
     const {
       conversationId,
       text,
       replyToId,
+      clientId,
       _id: existingMessageId,
     } = newMessage || {};
     if (typeof text !== "string" || !text.trim()) {
       return { error: "Message text is required" };
     }
+    if (clientId !== undefined && !isClientId(clientId)) {
+      return { error: "Invalid message id" };
+    }
 
     const conversation = await findMemberConversation(conversationId, userId);
     if (!conversation) return { error: "Conversation not found" };
+
+    if (clientId) {
+      const stored = await Message.findOne({ sender: userId, clientId });
+      if (stored) return { savedMessage: stored, duplicate: true };
+    }
 
     const recipients = otherMembers(conversation, userId);
     if (recipients.length === 0) return { error: "Conversation has no receiver" };
@@ -261,14 +276,24 @@ io.on("connection", (socket) => {
       : null;
 
     if (!savedMessage) {
-      savedMessage = await Message.create({
-        conversationId,
-        sender: userId,
-        text,
-        ...readState,
-        replyTo: await buildReplySnapshot(conversationId, replyToId),
-        createdAt: new Date(),
-      });
+      try {
+        savedMessage = await Message.create({
+          conversationId,
+          sender: userId,
+          text,
+          ...readState,
+          replyTo: await buildReplySnapshot(conversationId, replyToId),
+          ...(clientId ? { clientId } : {}),
+          createdAt: new Date(),
+        });
+      } catch (error) {
+        // The same retry arrived twice at once; the other one stored it
+        if (error?.code === 11000 && clientId) {
+          const stored = await Message.findOne({ sender: userId, clientId });
+          if (stored) return { savedMessage: stored, duplicate: true };
+        }
+        throw error;
+      }
     }
 
     return { savedMessage, conversation, recipients, readers };
@@ -289,6 +314,10 @@ io.on("connection", (socket) => {
 
     if (result.error) {
       return reply(ack, { success: false, error: result.error });
+    }
+    // Already delivered the first time it arrived; just confirm it again
+    if (result.duplicate) {
+      return reply(ack, { success: true, message: result.savedMessage });
     }
 
     const { savedMessage, conversation, recipients, readers } = result;

@@ -55,6 +55,8 @@ const messageSchema = new mongoose.Schema(
       type: new mongoose.Schema(
         {
           messageId: { type: String, required: true },
+          // The original's clientId, when it has one
+          clientId: { type: String },
           sender: { type: String, required: true },
           text: { type: String, required: true },
         },
@@ -62,11 +64,32 @@ const messageSchema = new mongoose.Schema(
       ),
       default: undefined,
     },
+    // The id the sending app gave the message. Apps that store messages on
+    // the device know messages by this id (by _id when it is absent: messages
+    // from older apps, and from before it existed).
+    clientId: {
+      type: String,
+    },
   },
   { timestamps: true }
 );
+
+// A message an app sends twice (a retry) is stored once
+messageSchema.index(
+  { sender: 1, clientId: 1 },
+  { unique: true, partialFilterExpression: { clientId: { $type: "string" } } }
+);
+
+const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+const isClientId = (value) =>
+  typeof value === "string" && CLIENT_ID_PATTERN.test(value);
+
+// The id apps that store messages on the device use for a message.
+const messageKey = (message) => message.clientId || String(message._id);
 
 // Automatically delete messages after 30 days (2592000 seconds)
 // messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 2592000 });
 
 module.exports = mongoose.model("Message", messageSchema);
+module.exports.isClientId = isClientId;
+module.exports.messageKey = messageKey;
